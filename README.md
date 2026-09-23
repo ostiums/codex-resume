@@ -4,8 +4,6 @@ Continue a Codex chat in Claude Code. The tool converts a Codex session
 (`~/.codex/sessions/**/rollout-*.jsonl`) into a regular Claude Code session and
 opens it with `claude --resume` in the same folder.
 
-The CLI's own messages are in Russian.
-
 ## Installation
 
 Requirements: macOS (or Linux) with zsh, `git`, `python3` ≥ 3.9, Codex and Claude Code.
@@ -77,7 +75,7 @@ Imported chats appear in the regular `claude --resume` list as `Codex: <title>`.
 - Images you attached in Codex (PNG, JPEG, GIF, WebP up to 5 MB) are carried
   over as real image blocks, so Claude sees them; each costs roughly 1–1.5k
   tokens per request. Screenshots taken by Codex tools are not embedded — the
-  tool output shows `[скриншот]` instead.
+  tool output shows `[screenshot]` instead.
 - Codex context compaction is ignored: the full original history is carried over.
 - The `↩Claude` mark in the list means Codex itself once imported that chat
   from Claude.

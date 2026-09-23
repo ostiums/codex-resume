@@ -71,7 +71,7 @@ record.)
 
 Each Codex user/assistant message item is truncated to 8000 chars (before items are merged into turns). If the assembled
 history exceeds 400 000 chars, the oldest turns are dropped and the first user
-turn gets `[Ранние ходы (N) не перенесены из-за размера — они остались в Codex.]`.
+turn gets `[N earlier turns were not carried over because of size — they remain in Codex.]`.
 
 ### User messages — noise filter
 
@@ -81,7 +81,7 @@ A user text item is dropped if, after `lstrip()`, it starts with any of:
 `<guardian_tool_descriptions>`, `<user_instructions>`, `<INSTRUCTIONS>`,
 `<skill>`, `<turn_aborted>`, `# AGENTS.md instructions`.
 
-`input_image` items become `[изображение]`. Everything else is kept verbatim
+`input_image` items become `[image]`. Everything else is kept verbatim
 (including `<task-notification>` and text from Claude-origin transcripts — it
 is real history). A user message whose items all get dropped is dropped.
 
@@ -96,17 +96,17 @@ is real history). A user message whose items all get dropped is dropped.
   → <output, ≤2000 chars>
   ```
 
-  Truncated parts end with `…[обрезано, N симв.]`. For `function_call`, the
+  Truncated parts end with `…[truncated, N chars]`. For `function_call`, the
   input is `arguments`; if that JSON has `cmd`/`command`/`code`, that value is
   shown instead of the raw JSON. An output with no matching call is dropped; a
-  call with no output shows `→ (нет вывода)`.
+  call with no output shows `→ (no output)`.
 
 ### Turn assembly
 
 Items are folded into strictly alternating turns: consecutive user items merge
 into one user turn (joined by blank line); consecutive assistant texts/tool
 blocks merge into one assistant turn. A leading assistant turn gets a synthetic
-user turn `[Продолжение чата из Codex]`. If the transcript ends with a user
+user turn `[Continuing a chat from Codex]`. If the transcript ends with a user
 turn, it is kept as is (Claude will answer it on the next prompt).
 
 A final synthetic pair is **not** added — the user's next prompt continues the
@@ -115,9 +115,9 @@ chat.
 The first user turn is prefixed with a context header:
 
 ```
-[Этот чат перенесён из Codex (<YYYY-MM-DD>, cwd <cwd>). Ответы ассистента ниже
-написал агент Codex; блоки [Codex tool: …] — команды, которые он выполнил, и
-их вывод. Продолжай работу с учётом этой истории.]
+[This chat was moved from Codex (<YYYY-MM-DD>, cwd <cwd>). The assistant replies
+below were written by the Codex agent; [Codex tool: …] blocks are commands it ran
+and their output. Continue the work with this history in mind.]
 ```
 
 (Verified in a spike: without it the model disowns the `[Codex tool: …]`
@@ -235,5 +235,5 @@ tool's own checkout and re-runs `install.sh`.
 developer drop, tool call rendering + truncation + pairing, compaction,
 turn alternation, subagent exclusion, title priority, slug, re-import
 protection, id suffix resolution. Plus a manual end-to-end check: import one
-real chat, `claude --resume` it, ask "о чём мы говорили?", confirm the answer
+real chat, `claude --resume` it, ask "what were we talking about?", confirm the answer
 reflects the Codex chat.

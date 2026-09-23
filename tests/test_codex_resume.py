@@ -54,14 +54,14 @@ class ParseTests(unittest.TestCase):
         recs = [meta(), msg("developer", "system stuff"),
                 msg("user", "<environment_context>\n<cwd>/x</cwd>"),
                 msg("user", "# AGENTS.md instructions for /Users/x\n..."),
-                msg("user", "привет"), msg("assistant", "здравствуй")]
+                msg("user", "hello"), msg("assistant", "hi there")]
         items = cr.extract_items(recs)
-        self.assertEqual([(i.role, i.text) for i in items], [("user", "привет"), ("assistant", "здравствуй")])
+        self.assertEqual([(i.role, i.text) for i in items], [("user", "hello"), ("assistant", "hi there")])
 
     def test_image_placeholder(self):
-        rec = msg("user", "смотри")
+        rec = msg("user", "look")
         rec["payload"]["content"].append({"type": "input_image", "image_url": "data:..."})
-        self.assertEqual(cr.extract_items([rec])[0].text, "смотри\n\n[изображение]")
+        self.assertEqual(cr.extract_items([rec])[0].text, "look\n\n[image]")
 
     def test_function_call_uses_cmd_and_pairs_output(self):
         items = cr.extract_items([fcall("shell", json.dumps({"cmd": "ls -la"}), "c1"), fout("c1", "a.txt")])
@@ -75,33 +75,33 @@ class ParseTests(unittest.TestCase):
         items = cr.extract_items([ccall("exec", "text(1)", "c1"), cout("c1", ["Script completed", "1"]),
                                   ccall("exec", "text(2)", "c2")])
         self.assertEqual(cr.render_tool(items[0]), "[Codex tool: exec]\ntext(1)\n→ Script completed\n1")
-        self.assertEqual(cr.render_tool(items[1]), "[Codex tool: exec]\ntext(2)\n→ (нет вывода)")
+        self.assertEqual(cr.render_tool(items[1]), "[Codex tool: exec]\ntext(2)\n→ (no output)")
 
     def test_orphan_output_dropped(self):
         self.assertEqual(cr.extract_items([fout("nope", "x")]), [])
 
     def test_truncate(self):
         self.assertEqual(cr.truncate("abc", 5), "abc")
-        self.assertEqual(cr.truncate("абвгдеж", 3), "абв…[обрезано, 7 симв.]")
+        self.assertEqual(cr.truncate("абвгдеж", 3), "абв…[truncated, 7 chars]")
 
     def test_tool_output_truncated(self):
         items = cr.extract_items([fcall("shell", "{}", "c1"), fout("c1", "x" * 2500)])
-        self.assertTrue(cr.render_tool(items[0]).endswith("…[обрезано, 2500 симв.]"))
+        self.assertTrue(cr.render_tool(items[0]).endswith("…[truncated, 2500 chars]"))
 
     def test_compaction_keeps_full_raw_history(self):
         # Real Codex replacement_history holds only user messages + an encrypted summary,
         # while the raw pre-compaction records stay in the append-only rollout.
         compacted = {"timestamp": "2026-09-21T11:00:00.000Z", "type": "compacted",
                      "payload": {"message": "", "replacement_history": [
-                         msg("user", "старое")["payload"],
+                         msg("user", "old")["payload"],
                          {"type": "compaction", "encrypted_content": "gAAA"}]}}
-        recs = [meta(), msg("user", "старое"), msg("assistant", "старый ответ"), compacted,
-                msg("user", "новое")]
-        self.assertEqual([i.text for i in cr.extract_items(recs)], ["старое", "старый ответ", "новое"])
+        recs = [meta(), msg("user", "old"), msg("assistant", "old answer"), compacted,
+                msg("user", "new")]
+        self.assertEqual([i.text for i in cr.extract_items(recs)], ["old", "old answer", "new"])
 
     def test_long_message_truncated(self):
         items = cr.extract_items([msg("user", "я" * 9000)])
-        self.assertTrue(items[0].text.endswith("…[обрезано, 9000 симв.]"))
+        self.assertTrue(items[0].text.endswith("…[truncated, 9000 chars]"))
         self.assertLess(len(items[0].text), 8100)
 
     def test_total_limit_drops_oldest_turns(self):
@@ -110,7 +110,7 @@ class ParseTests(unittest.TestCase):
             recs += [msg("user", f"q{n}" + "x" * 100), msg("assistant", f"a{n}" + "y" * 100)]
         turns = cr.build_turns(cr.extract_items(recs), header="HDR", max_chars=700)
         self.assertEqual(turns[0].role, "user")
-        self.assertIn("не перенесены", turns[0].text)
+        self.assertIn("were not carried over", turns[0].text)
         self.assertTrue(turns[-1].text.startswith("a9"))
         self.assertFalse(any("q0" in t.text for t in turns))
         self.assertLessEqual(sum(len(t.text) for t in turns[1:]), 700)
@@ -151,10 +151,10 @@ class ParseTests(unittest.TestCase):
 
 
     def test_user_image_becomes_image_block(self):
-        rec = msg("user", "смотри")
+        rec = msg("user", "look")
         rec["payload"]["content"].append({"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo=", "detail": "high"})
         item = cr.extract_items([rec])[0]
-        self.assertEqual(item.text, "смотри\n\n[изображение]")
+        self.assertEqual(item.text, "look\n\n[image]")
         self.assertEqual(item.images, [{"type": "image", "source": {
             "type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}])
 
@@ -164,7 +164,7 @@ class ParseTests(unittest.TestCase):
             rec["payload"]["content"].append({"type": "input_image", "image_url": url})
         item = cr.extract_items([rec])[0]
         self.assertEqual(item.images, [])
-        self.assertEqual(item.text.count("[изображение]"), 3)
+        self.assertEqual(item.text.count("[image]"), 3)
 
     def test_oversized_image_stays_placeholder(self):
         rec = msg("user", "q")
@@ -187,12 +187,12 @@ class ParseTests(unittest.TestCase):
             {"type": "input_text", "text": "Output:"},
             {"type": "input_image", "image_url": "data:image/jpeg;base64,/9j/", "detail": "original"}]})
         items = cr.extract_items([ccall("exec", "screenshot()", "c1"), out])
-        self.assertEqual(items[0].output, "Output:\n[скриншот]")
+        self.assertEqual(items[0].output, "Output:\n[screenshot]")
 
     def test_images_travel_to_merged_user_turn(self):
-        rec = msg("user", "два")
+        rec = msg("user", "two")
         rec["payload"]["content"].append({"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="})
-        turns = cr.build_turns(cr.extract_items([msg("user", "раз"), rec, msg("assistant", "ок")]), header="HDR")
+        turns = cr.build_turns(cr.extract_items([msg("user", "one"), rec, msg("assistant", "ok")]), header="HDR")
         self.assertEqual(len(turns[0].images), 1)
         self.assertEqual(turns[1].images, [])
 
@@ -206,7 +206,7 @@ class DiscoverTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_excludes_subagents_and_noise_only(self):
-        write_rollout(self.home, [meta(id="a" * 8 + "-real"), msg("user", "вопрос")])
+        write_rollout(self.home, [meta(id="a" * 8 + "-real"), msg("user", "question")])
         write_rollout(self.home, [meta(id="b" * 8 + "-guard", thread_source="guardian_review"), msg("user", "x")])
         write_rollout(self.home, [meta(id="c" * 8 + "-sub", source={"subagent": {"other": "guardian"}}), msg("user", "x")])
         write_rollout(self.home, [meta(id="d" * 8 + "-noise"), msg("user", "<environment_context>x")])
@@ -226,22 +226,22 @@ class DiscoverTests(unittest.TestCase):
         self.assertEqual([s.id for s in cr.discover(self.home)], ["arch-000001"])
 
     def test_title_priority(self):
-        write_rollout(self.home, [meta(id="t1-0000001"), msg("user", "первый вопрос")])
-        write_rollout(self.home, [meta(id="t2-0000002"), msg("user", "другое")])
-        write_rollout(self.home, [meta(id="t3-0000003"), msg("user", "третье")])
+        write_rollout(self.home, [meta(id="t1-0000001"), msg("user", "first question")])
+        write_rollout(self.home, [meta(id="t2-0000002"), msg("user", "other")])
+        write_rollout(self.home, [meta(id="t3-0000003"), msg("user", "third")])
         (self.home / "session_index.jsonl").write_text(
             json.dumps({"id": "t1-0000001", "thread_name": "Old"}) + "\n" +
-            json.dumps({"id": "t1-0000001", "thread_name": "Индекс"}) + "\n")
+            json.dumps({"id": "t1-0000001", "thread_name": "Indexed"}) + "\n")
         (self.home / "external_agent_session_imports.json").write_text(json.dumps(
-            {"records": [{"imported_thread_id": "t2-0000002", "title": "Из Claude"}]}))
+            {"records": [{"imported_thread_id": "t2-0000002", "title": "From Claude"}]}))
         by_id = {s.id: s for s in cr.discover(self.home)}
-        self.assertEqual(by_id["t1-0000001"].title, "Индекс")
-        self.assertEqual(by_id["t2-0000002"].title, "Из Claude")
+        self.assertEqual(by_id["t1-0000001"].title, "Indexed")
+        self.assertEqual(by_id["t2-0000002"].title, "From Claude")
         self.assertTrue(by_id["t2-0000002"].from_claude)
-        self.assertEqual(by_id["t3-0000003"].title, "третье")
+        self.assertEqual(by_id["t3-0000003"].title, "third")
 
     def test_title_is_single_line(self):
-        write_rollout(self.home, [meta(id="ml-0000001"), msg("user", "строка\tодна\nдве " + "x" * 100)])
+        write_rollout(self.home, [meta(id="ml-0000001"), msg("user", "line\tone\ntwo " + "x" * 100)])
         title = cr.discover(self.home)[0].title
         self.assertNotIn("\t", title)
         self.assertNotIn("\n", title)
@@ -263,9 +263,9 @@ class DiscoverTests(unittest.TestCase):
              for i in ("01a0c409-aaaa-111111", "01a0c409-bbbb-111111", "01a0c409-cccc-222222")]
         self.assertEqual(cr.resolve_id(s, "01a0c409-aaaa-111111").id, "01a0c409-aaaa-111111")
         self.assertEqual(cr.resolve_id(s, "222222").id, "01a0c409-cccc-222222")
-        with self.assertRaisesRegex(LookupError, "Неоднозначный"):
+        with self.assertRaisesRegex(LookupError, "Ambiguous"):
             cr.resolve_id(s, "111111")
-        with self.assertRaisesRegex(LookupError, "Нет сессии"):
+        with self.assertRaisesRegex(LookupError, "No Codex session"):
             cr.resolve_id(s, "999999")
         with self.assertRaisesRegex(LookupError, "6"):
             cr.resolve_id(s, "2222")
@@ -291,7 +291,7 @@ class WriteTests(unittest.TestCase):
 
     def session(self, cwd=None):
         write_rollout(self.codex, [meta(id="imp-000001", cwd=str(cwd or self.cwd)),
-                                   msg("user", "вопрос"), msg("assistant", "ответ")])
+                                   msg("user", "question"), msg("assistant", "answer")])
         return cr.discover(self.codex)[0]
 
     def test_slug_non_ascii(self):
@@ -301,14 +301,14 @@ class WriteTests(unittest.TestCase):
 
     def test_render_records_chain_and_title(self):
         turns = [cr.Turn("user", ["q"], TS), cr.Turn("assistant", ["a"], None)]
-        recs = cr.render_records(turns, "sid", "/w", "2.1.280", "Тема")
+        recs = cr.render_records(turns, "sid", "/w", "2.1.280", "Topic")
         self.assertIsNone(recs[0]["parentUuid"])
         self.assertEqual(recs[1]["parentUuid"], recs[0]["uuid"])
         self.assertEqual(recs[0]["message"], {"role": "user", "content": "q"})
         self.assertEqual(recs[1]["message"]["content"], [{"type": "text", "text": "a"}])
         self.assertEqual(recs[1]["message"]["role"], "assistant")
         self.assertTrue(recs[1]["timestamp"].endswith("Z"))
-        self.assertEqual(recs[-1], {"type": "custom-title", "customTitle": "Codex: Тема", "sessionId": "sid"})
+        self.assertEqual(recs[-1], {"type": "custom-title", "customTitle": "Codex: Topic", "sessionId": "sid"})
         for r in recs[:2]:
             self.assertEqual((r["sessionId"], r["cwd"], r["version"], r["isSidechain"]), ("sid", "/w", "2.1.280", False))
 
@@ -322,7 +322,7 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(res.path.parent, self.claude / "projects" / cr.project_slug(str(self.cwd)))
         recs, _ = cr.load_jsonl(res.path)
         self.assertEqual([r["type"] for r in recs], ["user", "assistant", "custom-title"])
-        self.assertTrue(recs[0]["message"]["content"].startswith("[Этот чат перенесён из Codex"))
+        self.assertTrue(recs[0]["message"]["content"].startswith("[This chat was moved from Codex"))
         self.assertEqual(json.loads(self.state.read_text())["imp-000001"]["session_id"], res.session_id)
         self.assertFalse(res.kept_previous)
 
@@ -337,7 +337,7 @@ class WriteTests(unittest.TestCase):
         info = self.session()
         first = cr.import_session(info, self.claude, self.state, "v")
         with open(first.path, "a") as f:
-            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "продолжил"}}) + "\n")
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "continued"}}) + "\n")
         before = first.path.read_text()
         second = cr.import_session(info, self.claude, self.state, "v")
         self.assertNotEqual(first.session_id, second.session_id)
@@ -360,7 +360,7 @@ class SyncTests(unittest.TestCase):
         self.codex, self.claude, self.state = root / "codex", root / "claude", root / "state.json"
         (root / "w").mkdir()
         self.chats = [write_rollout(self.codex, [meta(id=f"syn-{n:08d}", cwd=str(root / "w")),
-                                                 msg("user", f"вопрос {n}"), msg("assistant", "ответ")])
+                                                 msg("user", f"question {n}"), msg("assistant", "answer")])
                       for n in range(3)]
         write_rollout(self.codex, [meta(id="grd-00000009", thread_source="guardian_review"), msg("user", "x")])
         self.version_calls = 0
@@ -396,22 +396,22 @@ class SyncTests(unittest.TestCase):
         info = cr.find_session(self.codex, "syn-00000000")
         res = cr.import_session(info, self.claude, self.state, "v")
         with open(res.path, "a") as f:
-            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "продолжил"}}) + "\n")
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "continued"}}) + "\n")
         self.sync()
         copies = [p for p in (self.claude / "projects").glob("*/*.jsonl")
-                  if "вопрос 0" in p.read_text()]
+                  if "question 0" in p.read_text()]
         self.assertEqual(copies, [res.path])
 
     def test_changed_chat_is_reimported(self):
         self.sync()
         with open(self.chats[1], "a", encoding="utf-8") as f:
-            f.write(json.dumps(msg("user", "новое сообщение")) + "\n")
+            f.write(json.dumps(msg("user", "new message")) + "\n")
         res = self.sync()
         self.assertEqual((res.imported, res.unchanged), (1, 3))
         info = cr.find_session(self.codex, "syn-00000001")
         recs, _ = cr.load_jsonl(self.claude / "projects" / cr.project_slug(info.cwd) /
                                 f"{json.loads(self.state.read_text())[info.id]['session_id']}.jsonl")
-        self.assertIn("новое сообщение", recs[-2]["message"]["content"])
+        self.assertIn("new message", recs[-2]["message"]["content"])
 
 
 class AutosyncTests(unittest.TestCase):
@@ -475,13 +475,13 @@ class CliTests(unittest.TestCase):
         self.old = {k: os.environ.get(k) for k in self.env}
         os.environ.update(self.env)
         write_rollout(root / "codex", [meta(id="cli-00000001", cwd=str(root)),
-                                       msg("user", "как дела"), msg("assistant", "норм")])
+                                       msg("user", "how are you"), msg("assistant", "fine")])
         write_rollout(root / "codex", [meta(id="grd-00000002", thread_source="guardian_review"),
                                        msg("user", "approve?")])
         (root / "other").mkdir()
         (root / "empty").mkdir()
         write_rollout(root / "codex", [meta(id="oth-00000003", cwd=str(root / "other")),
-                                       msg("user", "другая папка"), msg("assistant", "ок")])
+                                       msg("user", "another folder"), msg("assistant", "ok")])
         self.root = root
         self.old_cwd = os.getcwd()
         os.chdir(root)
@@ -504,7 +504,7 @@ class CliTests(unittest.TestCase):
     def test_list(self):
         code, out, _ = self.run_main("list")
         self.assertEqual(code, 0)
-        self.assertIn("как дела", out)
+        self.assertIn("how are you", out)
         self.assertIn("cli-00000001", out)
         self.assertNotIn("grd-00000002", out)
 
@@ -524,7 +524,7 @@ class CliTests(unittest.TestCase):
         line = next(l for l in out.splitlines() if "oth-00000003" in l)
         shown = line.split("\t")[0]
         self.assertIn("other", shown)
-        self.assertIn("другая папка", shown)
+        self.assertIn("another folder", shown)
         self.assertNotIn(str(self.root), out)
 
     def info(self, cwd, title, turns=5):
@@ -532,20 +532,20 @@ class CliTests(unittest.TestCase):
                               title=title, user_turns=turns, from_claude=False, is_chat=True)
 
     def test_rows_local_are_date_and_title_then_id(self):
-        [line] = cr.rows([self.info("/a/proj", "Тема")])
+        [line] = cr.rows([self.info("/a/proj", "Topic")])
         shown, sid = line.split("\t")
-        self.assertEqual(sid, "id-Тема-000000")
-        self.assertTrue(shown.endswith("  Тема"))
+        self.assertEqual(sid, "id-Topic-000000")
+        self.assertTrue(shown.endswith("  Topic"))
         self.assertNotIn("proj", shown)
         self.assertNotIn("5", shown)  # no message-count column
         self.assertNotIn("   ", shown)  # no wide gaps
 
     def test_rows_global_align_titles_after_dir(self):
-        lines = cr.rows([self.info("/a/my-app", "Первая"), self.info(str(Path.home()), "Вторая")])
+        lines = cr.rows([self.info("/a/my-app", "First"), self.info(str(Path.home()), "Second")])
         shown = [l.split("\t")[0] for l in lines]
         self.assertIn("my-app", shown[0])
         self.assertIn("  ~  ", shown[1])
-        self.assertEqual(shown[0].index("Первая"), shown[1].index("Вторая"))
+        self.assertEqual(shown[0].index("First"), shown[1].index("Second"))
 
     def test_fzf_preview_hidden_until_space(self):
         args = cr.fzf_args(" · x", "codex-resume preview")
@@ -567,7 +567,7 @@ class CliTests(unittest.TestCase):
         os.environ["CODEX_HOME"] = str(self.root / "empty")
         code, _, err = self.run_main("global")
         self.assertEqual(code, 1)
-        self.assertIn("Нет чатов Codex", err)
+        self.assertIn("No Codex chats", err)
 
     def test_update_pulls_repo_and_reinstalls(self):
         import subprocess
@@ -598,7 +598,7 @@ class CliTests(unittest.TestCase):
         for argv in (["-g"], ["--global"]):
             code, _, err = self.run_main(*argv)
             self.assertEqual(code, 1)
-            self.assertIn("Нет чатов Codex", err)
+            self.assertIn("No Codex chats", err)
 
     def test_explicit_id_prefers_visible_chats(self):
         # "0000000" matches the chat, the other chat and the hidden guardian session;
@@ -607,10 +607,10 @@ class CliTests(unittest.TestCase):
                                             msg("user", "approve?")])
         code, out, _ = self.run_main("preview", "990001")
         self.assertEqual(code, 0)
-        write_rollout(self.root / "codex", [meta(id="vis-99990001"), msg("user", "видимый")])
+        write_rollout(self.root / "codex", [meta(id="vis-99990001"), msg("user", "visible")])
         code, out, _ = self.run_main("preview", "990001")
         self.assertEqual(code, 0)
-        self.assertIn("видимый", out)
+        self.assertIn("visible", out)
 
     def test_global_flag_before_subcommand(self):
         _, out, _ = self.run_main("-g", "list")
@@ -625,7 +625,7 @@ class CliTests(unittest.TestCase):
         code, out, err = self.run_main("sync", "--quiet")
         self.assertEqual((code, out, err), (0, "", ""))
         code, out, _ = self.run_main("sync")
-        self.assertIn("без изменений", out)
+        self.assertIn("unchanged", out)
 
     def test_list_json(self):
         code, out, _ = self.run_main("list", "--json")
@@ -642,13 +642,13 @@ class CliTests(unittest.TestCase):
     def test_preview(self):
         code, out, _ = self.run_main("preview", "cli-00000001")
         self.assertEqual(code, 0)
-        self.assertIn("как дела", out)
-        self.assertIn("норм", out)
+        self.assertIn("how are you", out)
+        self.assertIn("fine", out)
 
     def test_unknown_id(self):
         code, _, err = self.run_main("import", "zzzzzzzz")
         self.assertEqual(code, 2)
-        self.assertIn("Нет сессии", err)
+        self.assertIn("No Codex session", err)
 
 
 class InstallerTests(unittest.TestCase):

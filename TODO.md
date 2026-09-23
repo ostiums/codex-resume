@@ -1,11 +1,9 @@
 # TODO
 
-- [x] **Картинки как настоящие изображения.** Сейчас `input_image` из Codex превращается в текст
-  `[изображение]`, и модель не видит, что было на скриншоте. Сделать так же, как transession:
-  переводить `data:image/...;base64,...` из Codex в блок Claude
-  `{"type": "image", "source": {"type": "base64", "media_type": ..., "data": ...}}` внутри
-  user-сообщения. Цена: ~1–1.5k токенов за картинку на каждый запрос и рост файла сессии.
-  Сейчас в чатах Codex всего 4 картинки. Нужен тест и проверка через `claude -p --resume`.
-- [x] **cwd из последнего `turn_context`**, а не из `session_meta` (так сделано в форке
-  PavelCz/cli-continues). Правильнее, если рабочую папку в чате меняли.
-- [ ] *(опционально)* Флаг для переноса полного вывода команд без обрезки до 2000 символов.
+- [x] **Images as real image blocks.** Codex `input_image` used to become the text `[image]`,
+  so the model never saw the screenshot. Now `data:image/...;base64,...` is carried over as a
+  Claude `{"type": "image", "source": {"type": "base64", ...}}` block in the user message
+  (same approach as transession). Cost: ~1–1.5k tokens per image per request.
+- [x] **cwd from the latest `turn_context`** instead of `session_meta` (as in the
+  PavelCz/cli-continues fork) — correct when a chat was moved to another folder.
+- [ ] *(optional)* A flag to carry full tool output instead of truncating it to 2000 characters.

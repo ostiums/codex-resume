@@ -13,12 +13,12 @@ autosync=1
 for arg in "$@"; do
   case $arg in
     --no-autosync) autosync=0 ;;
-    *) echo "Неизвестный аргумент: $arg" >&2; exit 2 ;;
+    *) echo "Unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
 if ! command -v python3 >/dev/null; then
-  echo "Нужен python3 (xcode-select --install или brew install python)" >&2
+  echo "python3 is required (xcode-select --install or brew install python)" >&2
   exit 1
 fi
 
@@ -28,7 +28,7 @@ else
   here="$HOME/.local/share/codex-resume"
   repo=${CODEX_RESUME_REPO:-https://github.com/ostiums/codex-resume.git}
   if ! command -v git >/dev/null; then
-    echo "Нужен git (xcode-select --install)" >&2
+    echo "git is required (xcode-select --install)" >&2
     exit 1
   fi
   if [[ -d $here/.git ]]; then
@@ -54,18 +54,18 @@ if ! command -v fzf >/dev/null; then
   if command -v brew >/dev/null; then
     brew install fzf
   else
-    echo "fzf не найден и brew нет — выбор чата будет нумерованным списком (fzf можно поставить позже)"
+    echo "fzf not found and no brew — chats will be picked from a numbered list (you can install fzf later)"
   fi
 fi
 
 path_line='export PATH="$HOME/.local/bin:$PATH"'
 if [[ ":$PATH:" != *":$bin_dir:"* ]] && ! grep -qxF "$path_line" "$HOME/.zshrc" 2>/dev/null; then
   echo "$path_line" >> "$HOME/.zshrc"
-  echo "Добавил ~/.local/bin в PATH (~/.zshrc) — открой новое окно терминала"
+  echo "Added ~/.local/bin to PATH (~/.zshrc) — open a new terminal window"
 fi
 
 if (( first_install && autosync )); then
   "$link" autosync on  # also runs the first sync
 fi
 
-echo "Готово: codex-resume  +  /codex-import в Claude Code"
+echo "Done: codex-resume  +  /codex-import in Claude Code"

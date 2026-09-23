@@ -29,7 +29,7 @@ IMAGE_DATA_URL = re.compile(r"data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z
 DIR_COLUMN_MAX = 24
 PREVIEW_TURNS = 15
 PREVIEW_CHARS = 600
-LEAD_USER_TEXT = "[Продолжение чата из Codex]"
+LEAD_USER_TEXT = "[Continuing a chat from Codex]"
 NOISE_PREFIXES = (
     "<environment_context>", "<app-context>", "<recommended_plugins>",
     "<guardian_tool_descriptions>", "<user_instructions>", "<INSTRUCTIONS>",
@@ -96,7 +96,7 @@ def atomic_write(path: Path, text: str) -> None:
 def truncate(s: str, limit: int) -> str:
     if len(s) <= limit:
         return s
-    return s[:limit] + f"…[обрезано, {len(s)} симв.]"
+    return s[:limit] + f"…[truncated, {len(s)} chars]"
 
 
 def image_block(url) -> dict | None:
@@ -114,7 +114,7 @@ def _message_content(payload: dict) -> tuple[str, list[dict]]:
         if not isinstance(c, dict):
             continue
         if c.get("type") == "input_image":
-            parts.append("[изображение]")
+            parts.append("[image]")
             block = image_block(c.get("image_url")) if role == "user" else None
             if block:
                 images.append(block)
@@ -149,7 +149,7 @@ def _tool_input(payload: dict) -> str:
 def _tool_output(payload: dict) -> str:
     out = payload.get("output")
     if isinstance(out, list):
-        return "\n".join("[скриншот]" if c.get("type") == "input_image" else c.get("text", "")
+        return "\n".join("[screenshot]" if c.get("type") == "input_image" else c.get("text", "")
                          for c in out if isinstance(c, dict))
     if out is None:
         return ""
@@ -186,7 +186,7 @@ def extract_items(records: list[dict]) -> list[Item]:
 
 
 def render_tool(item: Item) -> str:
-    output = "(нет вывода)" if item.output is None else truncate(item.output, TOOL_OUTPUT_LIMIT)
+    output = "(no output)" if item.output is None else truncate(item.output, TOOL_OUTPUT_LIMIT)
     return f"[Codex tool: {item.name}]\n{truncate(item.text, TOOL_INPUT_LIMIT)}\n→ {output}"
 
 
@@ -207,16 +207,16 @@ def build_turns(items: list[Item], header: str | None = None, max_chars: int = T
     if turns and turns[0].role == "assistant":
         turns.insert(0, Turn("user", [LEAD_USER_TEXT], turns[0].ts))
     if turns and dropped:
-        turns[0].parts.insert(0, f"[Ранние ходы ({dropped}) не перенесены из-за размера — они остались в Codex.]")
+        turns[0].parts.insert(0, f"[{dropped} earlier turns were not carried over because of size — they remain in Codex.]")
     if turns and header:
         turns[0].parts.insert(0, header)
     return turns
 
 
 def context_header(date: str, cwd: str) -> str:
-    return (f"[Этот чат перенесён из Codex ({date}, cwd {cwd}). Ответы ассистента ниже "
-            "написал агент Codex; блоки [Codex tool: …] — команды, которые он выполнил, "
-            "и их вывод. Продолжай работу с учётом этой истории.]")
+    return (f"[This chat was moved from Codex ({date}, cwd {cwd}). The assistant replies below "
+            "were written by the Codex agent; [Codex tool: …] blocks are commands it ran and "
+            "their output. Continue the work with this history in mind.]")
 
 
 # ---------------------------------------------------------------- discover
@@ -274,7 +274,7 @@ def _read_session(path: Path, titles: dict, origin: dict) -> SessionInfo | None:
     turn_cwds = [r["payload"]["cwd"] for r in records if r.get("type") == "turn_context"
                  and isinstance(r.get("payload"), dict) and r["payload"].get("cwd")]
     user_texts = [i.text for i in extract_items(records) if i.role == "user"]
-    title = titles.get(sid) or origin.get(sid) or (user_texts[0] if user_texts else "") or "(без названия)"
+    title = titles.get(sid) or origin.get(sid) or (user_texts[0] if user_texts else "") or "(untitled)"
     return SessionInfo(
         id=sid, path=path, cwd=(turn_cwds[-1] if turn_cwds else meta.get("cwd")) or str(Path.home()),
         started=meta.get("timestamp") or "", updated=path.stat().st_mtime,
@@ -303,16 +303,16 @@ def resolve_id(sessions: list[SessionInfo], query: str) -> SessionInfo:
         if s.id == query:
             return s
     if len(query) < 6:
-        raise LookupError("Укажи полный id или хотя бы 6 его символов")
+        raise LookupError("Give the full id or at least 6 of its characters")
     matches = [s for s in sessions if query in s.id]
     if len(matches) > 1:
         matches = [s for s in matches if s.is_chat] or matches
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise LookupError(f"Нет сессии Codex с id, содержащим {query}")
+        raise LookupError(f"No Codex session with an id containing {query}")
     lines = "\n".join(f"  {s.id}  {s.title}" for s in matches)
-    raise LookupError(f"Неоднозначный id {query}, подходят:\n{lines}")
+    raise LookupError(f"Ambiguous id {query}, matches:\n{lines}")
 
 
 # ---------------------------------------------------------------- write
@@ -374,7 +374,7 @@ def import_session(info: SessionInfo, claude_dir: Path, state_path: Path, versio
     records, _ = load_jsonl(info.path)
     turns = build_turns(extract_items(records), context_header(info.started[:10], info.cwd))
     if not turns:
-        raise ValueError("В этом чате нет сообщений для переноса")
+        raise ValueError("This chat has no messages to carry over")
 
     state = read_json(state_path)
     prev = state.get(info.id) or {}
@@ -445,9 +445,9 @@ def _load_settings(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        raise ValueError(f"Не удалось прочитать {path}: {e}") from e
+        raise ValueError(f"Could not read {path}: {e}") from e
     if not isinstance(data, dict):
-        raise ValueError(f"{path}: ожидался JSON-объект")
+        raise ValueError(f"{path}: expected a JSON object")
     return data
 
 
@@ -537,7 +537,7 @@ def rows(sessions: list[SessionInfo]) -> list[str]:
 
 def fzf_args(scope: str, preview_cmd: str) -> list[str]:
     return ["fzf", "--delimiter", "\t", "--with-nth", "1", "--no-sort",
-            "--header", f"Codex → Claude{scope} · Enter — открыть, Пробел — превью, Esc — выход",
+            "--header", f"Codex → Claude{scope} · Enter: open · Space: preview · Esc: quit",
             "--preview", f"{preview_cmd} {{2}}", "--preview-window", "right,55%,wrap,hidden",
             "--bind", "space:toggle-preview"]
 
@@ -555,8 +555,8 @@ def _chats(global_: bool) -> list[SessionInfo]:
 
 def _empty_hint(global_: bool) -> str:
     if global_:
-        return "Нет чатов Codex"
-    return f"В этой папке ({_short_cwd(os.getcwd())}) нет чатов Codex. Все чаты: codex-resume global"
+        return "No Codex chats"
+    return f"No Codex chats in this folder ({_short_cwd(os.getcwd())}). All chats: codex-resume global"
 
 
 def pick(sessions: list[SessionInfo], scope: str) -> SessionInfo | None:
@@ -573,7 +573,7 @@ def pick(sessions: list[SessionInfo], scope: str) -> SessionInfo | None:
         for n, line in enumerate(rows(shown), 1):
             print(f"{n:>3}. " + line.split("\t")[0])
         try:
-            answer = input("Номер или текст для фильтра (пусто — выход): ").strip()
+            answer = input("Number or filter text (empty to quit): ").strip()
         except EOFError:
             return None
         if not answer:
@@ -585,12 +585,12 @@ def pick(sessions: list[SessionInfo], scope: str) -> SessionInfo | None:
         if found:
             shown = found
         else:
-            print("Ничего не найдено")
+            print("Nothing found")
 
 
 def _preview(s: SessionInfo) -> None:
     records, _ = load_jsonl(s.path)
-    print(f"{s.title}\n{_short_cwd(s.cwd)} · {s.started[:10]} · {s.user_turns} реплик\n")
+    print(f"{s.title}\n{_short_cwd(s.cwd)} · {s.started[:10]} · {s.user_turns} messages\n")
     for turn in build_turns(extract_items(records))[:PREVIEW_TURNS]:
         print(f"── {turn.role} ──\n{truncate(turn.text, PREVIEW_CHARS)}\n")
 
@@ -598,13 +598,13 @@ def _preview(s: SessionInfo) -> None:
 def _do_import(s: SessionInfo) -> ImportResult:
     res = import_session(s, _claude_dir(), _state_path(), _claude_version())
     if res.cwd != s.cwd:
-        print(f"⚠ Папки {s.cwd} больше нет — сессия создана в {res.cwd}", file=sys.stderr)
+        print(f"⚠ Folder {s.cwd} no longer exists — session created in {res.cwd}", file=sys.stderr)
     if res.kept_previous:
-        print("ℹ Этот чат уже продолжали в Claude — прежняя сессия сохранена, создана новая", file=sys.stderr)
-    print(f"Импортировано: {s.title} ({res.turns} ходов)")
-    print(f"Сессия Claude: {res.session_id}")
-    print(f"Файл: {res.path}")
-    print(f"Продолжить: cd {shlex.quote(res.cwd)} && claude --resume {res.session_id}")
+        print("ℹ This chat was already continued in Claude — that session is kept, a new one was created", file=sys.stderr)
+    print(f"Imported: {s.title} ({res.turns} turns)")
+    print(f"Claude session: {res.session_id}")
+    print(f"File: {res.path}")
+    print(f"Continue: cd {shlex.quote(res.cwd)} && claude --resume {res.session_id}")
     return res
 
 
@@ -617,10 +617,10 @@ def _hook_command() -> str:
 def update(repo: Path) -> int:
     """git pull the tool's own checkout and re-run its installer."""
     if not (repo / ".git").exists():
-        print(f"{repo} — не git-репозиторий, обновить через git нельзя", file=sys.stderr)
+        print(f"{repo} is not a git repository, can't update via git", file=sys.stderr)
         return 1
     if subprocess.run(["git", "-C", str(repo), "pull", "--ff-only", "-q"]).returncode != 0:
-        print("git pull не удался", file=sys.stderr)
+        print("git pull failed", file=sys.stderr)
         return 1
     return subprocess.run([str(repo / "install.sh")]).returncode
 
@@ -628,25 +628,25 @@ def update(repo: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     def add_global_flag(p: argparse.ArgumentParser, default) -> argparse.ArgumentParser:
         p.add_argument("-g", "--global", dest="global_", action="store_true", default=default,
-                       help="чаты из всех папок (то же, что codex-resume global)")
+                       help="chats from all folders (same as codex-resume global)")
         return p
 
     # -g works before or after the subcommand; SUPPRESS keeps a subparser from resetting it.
     parser = add_global_flag(argparse.ArgumentParser(
-        prog="codex-resume", description="Продолжить чат из Codex в Claude Code"), False)
+        prog="codex-resume", description="Continue a Codex chat in Claude Code"), False)
     sub = parser.add_subparsers(dest="cmd")
-    p_list = add_global_flag(sub.add_parser("list", help="список чатов Codex"), argparse.SUPPRESS)
+    p_list = add_global_flag(sub.add_parser("list", help="list Codex chats"), argparse.SUPPRESS)
     p_list.add_argument("--json", action="store_true")
-    p_list.add_argument("--all", action="store_true", help="включая служебные сессии")
-    sub.add_parser("import", help="конвертировать чат").add_argument("id")
-    add_global_flag(sub.add_parser("resume", help="конвертировать и открыть в claude"),
+    p_list.add_argument("--all", action="store_true", help="include internal sessions")
+    sub.add_parser("import", help="convert a chat").add_argument("id")
+    add_global_flag(sub.add_parser("resume", help="convert and open in claude"),
                     argparse.SUPPRESS).add_argument("id", nargs="?")
-    sub.add_parser("global", help="выбрать чат из всех папок и открыть в claude").add_argument("id", nargs="?")
-    sub.add_parser("preview", help="показать начало чата").add_argument("id")
-    sub.add_parser("update", help="обновить codex-resume (git pull + install.sh)")
-    sub.add_parser("autosync", help="синхронизировать чаты Codex в фоне при каждом запуске Claude").add_argument(
+    sub.add_parser("global", help="pick a chat from all folders and open in claude").add_argument("id", nargs="?")
+    sub.add_parser("preview", help="show the beginning of a chat").add_argument("id")
+    sub.add_parser("update", help="update codex-resume (git pull + install.sh)")
+    sub.add_parser("autosync", help="sync Codex chats in the background at every Claude start").add_argument(
         "state", nargs="?", choices=["on", "off", "status"], default="status")
-    sub.add_parser("sync", help="импортировать все новые и изменённые чаты (для /resume)").add_argument(
+    sub.add_parser("sync", help="import all new and changed chats (for /resume)").add_argument(
         "--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -667,7 +667,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "sync":
             res = sync(_codex_home(), _claude_dir(), _state_path(), _claude_version)
             if not args.quiet:
-                print(f"Импортировано: {res.imported}, без изменений: {res.unchanged}")
+                print(f"Imported: {res.imported}, unchanged: {res.unchanged}")
             return 0
         if args.cmd == "autosync":
             settings = _claude_dir() / "settings.json"
@@ -675,9 +675,9 @@ def main(argv: list[str] | None = None) -> int:
                 set_autosync(settings, args.state == "on", _hook_command())
                 if args.state == "on":
                     res = sync(_codex_home(), _claude_dir(), _state_path(), _claude_version)
-                    print(f"Первая синхронизация: импортировано {res.imported}")
+                    print(f"First sync: imported {res.imported}")
             enabled = autosync_enabled(settings)
-            print(f"Автосинхронизация {'включена' if enabled else 'выключена'} ({settings})")
+            print(f"Autosync is {'on' if enabled else 'off'} ({settings})")
             return 0
         if args.cmd == "update":
             return update(Path(os.path.realpath(__file__)).parent)
@@ -697,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
             if not sessions:
                 print(_empty_hint(global_), file=sys.stderr)
                 return 1
-            chosen = pick(sessions, " · все папки" if global_ else f" · {_dir_name(os.getcwd())}")
+            chosen = pick(sessions, " · all folders" if global_ else f" · {_dir_name(os.getcwd())}")
         if chosen is None:
             return 130
         res = _do_import(chosen)
