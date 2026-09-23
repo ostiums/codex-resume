@@ -104,3 +104,7 @@ rm -rf ~/.local/state/codex-resume ~/.local/share/codex-resume
 ```sh
 python3 -m unittest discover -s tests
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
