@@ -201,11 +201,12 @@ id is resolved among visible chats first, then among hidden service sessions.
 ### Slash command
 
 `commands/codex-import.md` (installed as `/codex-import [global | search | id]`):
-lists chats via `codex-resume list [--global] --json` (current folder first,
-falling back to all folders), shows an interactive AskUserQuestion window with 3
-chats + `Ещё…` for the next page, treats the free-text "Other" answer as search,
-runs `codex-resume import <id>`, and reports how to open it (`/resume` or the
-`cd <cwd> && claude --resume <sid>` line). It cannot switch the current session.
+both lists (`codex-resume list` and `codex-resume list --global`) are injected
+into the prompt with `` !`…` `` before the model runs, so the model's first
+action is the AskUserQuestion window (3 chats + `Ещё…` for the next page; the
+free-text "Other" answer is search). It then runs `codex-resume import <id>` and
+reports how to open it (`/resume` or the `cd <cwd> && claude --resume <sid>`
+line). It cannot switch the current session.
 
 ## Install
 
