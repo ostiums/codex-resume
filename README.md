@@ -49,7 +49,8 @@ codex-resume autosync on|off     # run sync in the background at every Claude st
 
 `<id>` is a full Codex session id or any unique part of it (6+ characters).
 
-The chat always opens in Claude in the folder where it ran in Codex, even if
+The chat always opens in Claude in the folder where it last ran in Codex (the
+latest `turn_context`, falling back to where it started), even if
 `codex-resume global` was started somewhere else. Folders are compared after
 resolving symlinks.
 
@@ -76,6 +77,10 @@ Imported chats appear in the regular `claude --resume` list as `Codex: <title>`.
 - A single message is truncated to 8000 characters. If the whole history is
   longer than 400,000 characters, the oldest turns are not carried over (a note
   at the beginning says so).
+- Images you attached in Codex (PNG, JPEG, GIF, WebP up to 5 MB) are carried
+  over as real image blocks, so Claude sees them; each costs roughly 1–1.5k
+  tokens per request. Screenshots taken by Codex tools are not embedded — the
+  tool output shows `[скриншот]` instead.
 - Codex context compaction is ignored: the full original history is carried over.
 - The `↩Claude` mark in the list means Codex itself once imported that chat
   from Claude.

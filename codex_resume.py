@@ -15,7 +15,8 @@ import shutil
 import subprocess
 import sys
 import uuid
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 NAMESPACE = uuid.UUID("6f1c2b1e-3c1a-4d7e-9a57-2f0c0de5e5a1")
@@ -23,6 +24,8 @@ TOOL_INPUT_LIMIT = 1000
 TOOL_OUTPUT_LIMIT = 2000
 MESSAGE_LIMIT = 8000  # per user/assistant message
 TOTAL_LIMIT = 400_000  # whole imported history; oldest turns are dropped beyond this
+IMAGE_MAX_CHARS = 5 * 1024 * 1024  # base64 payload cap per image (Claude API limit is 5 MB)
+IMAGE_DATA_URL = re.compile(r"data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=\s]+)\Z")
 DIR_COLUMN_MAX = 24
 PREVIEW_TURNS = 15
 PREVIEW_CHARS = 600
@@ -43,6 +46,7 @@ class Item:
     ts: str | None
     name: str = ""
     output: str | None = None
+    images: list[dict] = field(default_factory=list)  # Claude image blocks (user messages only)
 
 
 @dataclass
@@ -50,6 +54,7 @@ class Turn:
     role: str  # "user" | "assistant"
     parts: list[str]
     ts: str | None
+    images: list[dict] = field(default_factory=list)
 
     @property
     def text(self) -> str:
@@ -94,14 +99,25 @@ def truncate(s: str, limit: int) -> str:
     return s[:limit] + f"…[обрезано, {len(s)} симв.]"
 
 
-def _message_text(payload: dict) -> str:
+def image_block(url) -> dict | None:
+    """Codex `input_image` data URL → Claude image block; None if unusable (then only a text marker remains)."""
+    m = IMAGE_DATA_URL.match(url) if isinstance(url, str) else None
+    if not m or len(m.group(2)) > IMAGE_MAX_CHARS:
+        return None
+    return {"type": "image", "source": {"type": "base64", "media_type": m.group(1), "data": m.group(2)}}
+
+
+def _message_content(payload: dict) -> tuple[str, list[dict]]:
     role = payload.get("role")
-    parts = []
+    parts, images = [], []
     for c in payload.get("content") or []:
         if not isinstance(c, dict):
             continue
         if c.get("type") == "input_image":
             parts.append("[изображение]")
+            block = image_block(c.get("image_url")) if role == "user" else None
+            if block:
+                images.append(block)
             continue
         text = c.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -109,7 +125,7 @@ def _message_text(payload: dict) -> str:
         if role == "user" and text.lstrip().startswith(NOISE_PREFIXES):
             continue
         parts.append(text)
-    return "\n\n".join(parts)
+    return "\n\n".join(parts), images
 
 
 def _tool_input(payload: dict) -> str:
@@ -133,7 +149,8 @@ def _tool_input(payload: dict) -> str:
 def _tool_output(payload: dict) -> str:
     out = payload.get("output")
     if isinstance(out, list):
-        return "\n".join(c.get("text", "") for c in out if isinstance(c, dict))
+        return "\n".join("[скриншот]" if c.get("type") == "input_image" else c.get("text", "")
+                         for c in out if isinstance(c, dict))
     if out is None:
         return ""
     return out if isinstance(out, str) else json.dumps(out, ensure_ascii=False)
@@ -146,9 +163,10 @@ def extract_items(records: list[dict]) -> list[Item]:
     def add(payload: dict, ts: str | None) -> None:
         kind = payload.get("type")
         if kind == "message" and payload.get("role") in ("user", "assistant"):
-            text = truncate(_message_text(payload), MESSAGE_LIMIT)
+            text, images = _message_content(payload)
+            text = truncate(text, MESSAGE_LIMIT)
             if text:
-                items.append(Item(payload["role"], text, ts))
+                items.append(Item(payload["role"], text, ts, images=images))
         elif kind in ("function_call", "custom_tool_call"):
             item = Item("tool", _tool_input(payload), ts, name=str(payload.get("name") or "?"))
             items.append(item)
@@ -177,10 +195,10 @@ def build_turns(items: list[Item], header: str | None = None, max_chars: int = T
     for item in items:
         role = "user" if item.role == "user" else "assistant"
         text = render_tool(item) if item.role == "tool" else item.text
-        if turns and turns[-1].role == role:
-            turns[-1].parts.append(text)
-        else:
-            turns.append(Turn(role, [text], item.ts))
+        if not (turns and turns[-1].role == role):
+            turns.append(Turn(role, [], item.ts))
+        turns[-1].parts.append(text)
+        turns[-1].images.extend(item.images)
     dropped = 0
     total = sum(len(t.text) for t in turns)
     while len(turns) > 1 and total > max_chars:
@@ -252,10 +270,13 @@ def _read_session(path: Path, titles: dict, origin: dict) -> SessionInfo | None:
     if not isinstance(meta, dict) or not meta.get("id"):
         return None
     sid = meta["id"]
+    # The latest turn_context wins: a chat can be moved to another folder after it starts.
+    turn_cwds = [r["payload"]["cwd"] for r in records if r.get("type") == "turn_context"
+                 and isinstance(r.get("payload"), dict) and r["payload"].get("cwd")]
     user_texts = [i.text for i in extract_items(records) if i.role == "user"]
     title = titles.get(sid) or origin.get(sid) or (user_texts[0] if user_texts else "") or "(без названия)"
     return SessionInfo(
-        id=sid, path=path, cwd=meta.get("cwd") or str(Path.home()),
+        id=sid, path=path, cwd=(turn_cwds[-1] if turn_cwds else meta.get("cwd")) or str(Path.home()),
         started=meta.get("timestamp") or "", updated=path.stat().st_mtime,
         title=one_line(title), user_turns=len(user_texts), from_claude=sid in origin,
         is_chat=not is_subagent(meta) and bool(user_texts),
@@ -319,7 +340,8 @@ def render_records(turns: list[Turn], session_id: str, cwd: str, version: str, t
     for n, turn in enumerate(turns):
         rec_uuid = str(uuid.uuid5(NAMESPACE, f"{session_id}:{n}"))
         if turn.role == "user":
-            message = {"role": "user", "content": turn.text}
+            content = [{"type": "text", "text": turn.text}, *turn.images] if turn.images else turn.text
+            message = {"role": "user", "content": content}
         else:
             message = {"id": f"msg_codex_{n}", "type": "message", "role": "assistant",
                        "model": "codex-import", "content": [{"type": "text", "text": turn.text}],

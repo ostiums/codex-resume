@@ -150,6 +150,53 @@ class ParseTests(unittest.TestCase):
             self.assertEqual((len(recs), bad), (1, 1))
 
 
+    def test_user_image_becomes_image_block(self):
+        rec = msg("user", "смотри")
+        rec["payload"]["content"].append({"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo=", "detail": "high"})
+        item = cr.extract_items([rec])[0]
+        self.assertEqual(item.text, "смотри\n\n[изображение]")
+        self.assertEqual(item.images, [{"type": "image", "source": {
+            "type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}])
+
+    def test_unusable_images_stay_placeholders(self):
+        rec = msg("user", "q")
+        for url in ("data:...", "data:image/bmp;base64,Qk0=", "https://example.com/a.png"):
+            rec["payload"]["content"].append({"type": "input_image", "image_url": url})
+        item = cr.extract_items([rec])[0]
+        self.assertEqual(item.images, [])
+        self.assertEqual(item.text.count("[изображение]"), 3)
+
+    def test_oversized_image_stays_placeholder(self):
+        rec = msg("user", "q")
+        rec["payload"]["content"].append({"type": "input_image", "image_url": "data:image/png;base64," + "A" * 64})
+        old, cr.IMAGE_MAX_CHARS = cr.IMAGE_MAX_CHARS, 32
+        try:
+            self.assertEqual(cr.extract_items([rec])[0].images, [])
+        finally:
+            cr.IMAGE_MAX_CHARS = old
+
+    def test_image_only_message_kept(self):
+        rec = _item({"type": "message", "role": "user",
+                     "content": [{"type": "input_image", "image_url": "data:image/jpeg;base64,/9j/"}]})
+        items = cr.extract_items([rec])
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].images[0]["source"]["media_type"], "image/jpeg")
+
+    def test_tool_output_image_marked(self):
+        out = _item({"type": "custom_tool_call_output", "call_id": "c1", "output": [
+            {"type": "input_text", "text": "Output:"},
+            {"type": "input_image", "image_url": "data:image/jpeg;base64,/9j/", "detail": "original"}]})
+        items = cr.extract_items([ccall("exec", "screenshot()", "c1"), out])
+        self.assertEqual(items[0].output, "Output:\n[скриншот]")
+
+    def test_images_travel_to_merged_user_turn(self):
+        rec = msg("user", "два")
+        rec["payload"]["content"].append({"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="})
+        turns = cr.build_turns(cr.extract_items([msg("user", "раз"), rec, msg("assistant", "ок")]), header="HDR")
+        self.assertEqual(len(turns[0].images), 1)
+        self.assertEqual(turns[1].images, [])
+
+
 class DiscoverTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -165,6 +212,12 @@ class DiscoverTests(unittest.TestCase):
         write_rollout(self.home, [meta(id="d" * 8 + "-noise"), msg("user", "<environment_context>x")])
         self.assertEqual([s.id for s in cr.discover(self.home)], ["a" * 8 + "-real"])
         self.assertEqual(len(cr.discover(self.home, include_all=True)), 4)
+
+    def test_cwd_from_last_turn_context(self):
+        tc = lambda cwd: {"timestamp": TS, "type": "turn_context", "payload": {"cwd": cwd}}
+        write_rollout(self.home, [meta(id="tc-0000001", cwd="/start"), tc("/start"), msg("user", "q"),
+                                  tc("/moved"), msg("user", "q2")])
+        self.assertEqual(cr.discover(self.home)[0].cwd, "/moved")
 
     def test_archived_included(self):
         d = self.home / "archived_sessions"
@@ -258,6 +311,11 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(recs[-1], {"type": "custom-title", "customTitle": "Codex: Тема", "sessionId": "sid"})
         for r in recs[:2]:
             self.assertEqual((r["sessionId"], r["cwd"], r["version"], r["isSidechain"]), ("sid", "/w", "2.1.280", False))
+
+    def test_render_user_turn_with_images_as_block_list(self):
+        blk = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}
+        recs = cr.render_records([cr.Turn("user", ["q"], TS, images=[blk])], "sid", "/w", "v", "T")
+        self.assertEqual(recs[0]["message"]["content"], [{"type": "text", "text": "q"}, blk])
 
     def test_import_writes_session_and_state(self):
         res = cr.import_session(self.session(), self.claude, self.state, "2.1.280")
