@@ -23,8 +23,9 @@ if ! command -v fzf >/dev/null; then
   fi
 fi
 
-if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+path_line='export PATH="$HOME/.local/bin:$PATH"'
+if [[ ":$PATH:" != *":$bin_dir:"* ]] && ! grep -qxF "$path_line" "$HOME/.zshrc" 2>/dev/null; then
+  echo "$path_line" >> "$HOME/.zshrc"
   echo "Добавил ~/.local/bin в PATH (~/.zshrc) — открой новое окно терминала"
 fi
 
