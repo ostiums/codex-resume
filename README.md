@@ -8,31 +8,28 @@ The CLI's own messages are in Russian.
 
 ## Installation
 
-Requirements: macOS (or Linux) with zsh, `python3` ≥ 3.9, Codex and Claude Code.
+Requirements: macOS (or Linux) with zsh, `git`, `python3` ≥ 3.9, Codex and Claude Code.
 
 ```sh
-git clone https://github.com/ostiums/codex-resume ~/.local/share/codex-resume && ~/.local/share/codex-resume/install.sh
+curl -fsSL https://raw.githubusercontent.com/ostiums/codex-resume/main/install.sh | zsh
 ```
 
-The installer:
-- creates `~/.local/bin/codex-resume`;
+That's it. The installer:
+- clones the repo into `~/.local/share/codex-resume` and links `~/.local/bin/codex-resume`;
 - copies the `/codex-import` slash command to `~/.claude/commands/`;
+- turns on **autosync**: an async `SessionStart` hook in `~/.claude/settings.json`
+  runs `codex-resume sync --quiet` in the background at every Claude start, so
+  every Codex chat shows up in Claude's own `/resume` picker as `Codex: <title>`
+  (it never delays startup; a no-op sync takes ~0.04 s even with 150+ chats);
+- runs the first sync right away, so chats are in `/resume` immediately;
 - installs `fzf` via Homebrew if brew is available (without fzf, chats are picked from a numbered list);
 - adds `~/.local/bin` to PATH via `~/.zshrc` if it isn't there yet.
 
-Update: `codex-resume update`.
+Without autosync: `curl -fsSL …/install.sh | zsh -s -- --no-autosync`.
+Turn it on or off later with `codex-resume autosync on|off` — updates never
+switch it back on.
 
-Recommended: turn on automatic sync so every Codex chat shows up in Claude's own
-`/resume` picker:
-
-```sh
-codex-resume autosync on
-```
-
-This adds an async `SessionStart` hook to `~/.claude/settings.json` that runs
-`codex-resume sync --quiet` in the background at every Claude start (it never
-delays startup; a no-op sync takes ~0.04 s even with 150+ chats because
-unchanged Codex files aren't opened). `codex-resume autosync off` removes it.
+Update: `codex-resume update` (or run the same curl line again).
 
 ## Usage
 

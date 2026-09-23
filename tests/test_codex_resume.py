@@ -651,5 +651,74 @@ class CliTests(unittest.TestCase):
         self.assertIn("Нет сессии", err)
 
 
+class InstallerTests(unittest.TestCase):
+    """install.sh run the way users run it: `curl … | zsh` with a throwaway HOME."""
+
+    def setUp(self):
+        import shutil, subprocess
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.home = self.root / "home"
+        (self.home / ".codex").mkdir(parents=True)
+        repo = Path(__file__).resolve().parent.parent
+        self.origin = self.root / "origin"
+        self.origin.mkdir()
+        for name in ("codex_resume.py", "install.sh"):
+            shutil.copy2(repo / name, self.origin / name)
+        shutil.copytree(repo / "commands", self.origin / "commands")
+        git = lambda *a: subprocess.run(["git", *a], cwd=self.origin, check=True, capture_output=True)
+        git("init", "-q", "-b", "main")
+        git("add", ".")
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
+        self.env = {**os.environ, "HOME": str(self.home), "CODEX_RESUME_REPO": str(self.origin)}
+        for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "CODEX_RESUME_STATE"):
+            self.env.pop(k, None)
+        self.installer = (repo / "install.sh").read_text()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def pipe_install(self, *args):
+        import subprocess
+        return subprocess.run(["zsh", "-s", "--", *args], input=self.installer, text=True,
+                              capture_output=True, cwd=self.root, env=self.env)
+
+    def settings(self):
+        p = self.home / ".claude" / "settings.json"
+        return json.loads(p.read_text()) if p.exists() else {}
+
+    def autosync_on(self):
+        return cr.AUTOSYNC_MARK in json.dumps(self.settings())
+
+    def test_piped_install_clones_links_and_enables_autosync(self):
+        r = self.pipe_install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        clone = self.home / ".local/share/codex-resume"
+        self.assertTrue((clone / ".git").is_dir())
+        link = self.home / ".local/bin/codex-resume"
+        self.assertEqual(Path(os.path.realpath(link)), (clone / "codex_resume.py").resolve())
+        self.assertTrue((self.home / ".claude/commands/codex-import.md").exists())
+        self.assertTrue(self.autosync_on())
+
+    def test_reinstall_does_not_reenable_autosync(self):
+        import subprocess
+        self.assertEqual(self.pipe_install().returncode, 0)
+        link = self.home / ".local/bin/codex-resume"
+        subprocess.run([str(link), "autosync", "off"], env=self.env, check=True, capture_output=True)
+        self.assertFalse(self.autosync_on())
+        r = subprocess.run([str(self.home / ".local/share/codex-resume/install.sh")],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.autosync_on())
+        self.assertEqual(self.pipe_install().returncode, 0)  # piped re-run = update of the clone
+        self.assertFalse(self.autosync_on())
+
+    def test_no_autosync_flag(self):
+        r = self.pipe_install("--no-autosync")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.autosync_on())
+        self.assertTrue((self.home / ".local/bin/codex-resume").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
