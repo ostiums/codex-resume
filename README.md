@@ -1,33 +1,46 @@
 # codex-resume
 
-Continue a Codex chat in Claude Code. The tool converts a Codex session
-(`~/.codex/sessions/**/rollout-*.jsonl`) into a regular Claude Code session and
-opens it with `claude --resume` in the same folder.
+Continue your OpenAI Codex chats in Claude Code. Every Codex chat (Desktop app or CLI) becomes a native Claude Code session that opens with `claude --resume` in the folder where the chat ran.
 
-## Installation
+[![License: MIT](https://img.shields.io/github/license/ostiums/codex-resume)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/ostiums/codex-resume)](https://github.com/ostiums/codex-resume/releases)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
-Requirements: macOS (or Linux) with zsh, `git`, `python3` ≥ 3.9, Codex and Claude Code.
+![codex-resume demo: pick a Codex chat in fzf, preview it, import it into Claude Code](assets/demo.gif)
+
+## Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ostiums/codex-resume/main/install.sh | zsh
 ```
 
-That's it. The installer:
-- clones the repo into `~/.local/share/codex-resume` and links `~/.local/bin/codex-resume`;
-- copies the `/codex-import` slash command to `~/.claude/commands/`;
-- turns on **autosync**: an async `SessionStart` hook in `~/.claude/settings.json`
-  runs `codex-resume sync --quiet` in the background at every Claude start, so
-  every Codex chat shows up in Claude's own `/resume` picker as `Codex: <title>`
-  (it never delays startup; a no-op sync takes ~0.04 s even with 150+ chats);
-- runs the first sync right away, so chats are in `/resume` immediately;
-- installs `fzf` via Homebrew if brew is available (without fzf, chats are picked from a numbered list);
-- adds `~/.local/bin` to PATH via `~/.zshrc` if it isn't there yet.
+After that, every Codex chat is listed in Claude Code's own `/resume` picker as `Codex: <title>`, and `codex-resume` in any project folder shows the Codex chats that ran there.
 
-Without autosync: `curl -fsSL …/install.sh | zsh -s -- --no-autosync`.
-Turn it on or off later with `codex-resume autosync on|off` — updates never
-switch it back on.
+Requirements: macOS or Linux with zsh, `git`, `python3` 3.9 or newer, Codex and Claude Code. No other dependencies; `fzf` is installed through Homebrew when brew is present.
 
-Update: `codex-resume update` (or run the same curl line again).
+## What gets carried over
+
+- Your messages and the Codex replies, in order, including everything before a Codex context compaction.
+- Tool calls as short text blocks (`[Codex tool: exec]`, the command, then the output cut to 2,000 characters), so Claude knows what was run without a multi-megabyte context.
+- Screenshots you attached in Codex, as real images Claude can see.
+- The chat title, shown in `/resume` as `Codex: <title>`.
+
+Left out: Codex system prompts, `<environment_context>` and AGENTS.md inserts, developer messages, encrypted reasoning, and the internal approval-reviewer sessions Codex Desktop creates. Codex data is only read, never modified.
+
+## Compared with other tools
+
+Measured on 2026-09-23 with one real Codex Desktop 0.155 chat: 113 tool calls, one context compaction, 43 assistant replies.
+
+| Tool | What Claude gets | History carried | Codex system text in the history | Title in `/resume` |
+|---|---|---|---|---|
+| **codex-resume** | native session | all 43 replies, tool calls as compact text: 189k characters | filtered out | `Codex: <title>` |
+| [transession](https://github.com/inmzhang/transession) 0.2.0 | native session | all replies with full tool output and images: 2.6M characters, about 180k tokens on the first prompt | kept, replayed as user messages | first message, which is Codex system text |
+| [codex2claude](https://github.com/MisterBrookT/codex2claude) | native session (runs transession, then cleans up) | full history, 5.8 MB session file | partly filtered | first message |
+| [cli-continues](https://github.com/yigitkonur/cli-continues) 4.1.1 | a summary prompt in a new session | last 10 messages (50 with `--preset full`); replies from before the compaction are lost in the default preset | partly filtered | none |
+| [authsec-bridge](https://github.com/authsec-ai/authsec-bridge) | native session | replies kept, 0 of 113 tool calls | kept | none |
+
+Where the others do more: cli-continues moves sessions between 16 coding agents, and transession converts in both directions and keeps complete tool output.
 
 ## Usage
 
@@ -60,25 +73,27 @@ built-in `/resume` picker: type `Codex` to filter (imported chats are titled
 `Codex: <title>`), `Ctrl+A` shows chats from all folders, `Space` previews,
 `Enter` opens.
 
-Imported chats appear in the regular `claude --resume` list as `Codex: <title>`.
+## Conversion limits
 
-## How the history is carried over
+- Tool call input is cut to 1,000 characters and output to 2,000.
+- A single message is cut to 8,000 characters. If the whole history is longer than 400,000 characters, the oldest turns are dropped and a note at the start of the chat says how many.
+- Attached images (PNG, JPEG, GIF, WebP up to 5 MB) cost roughly 1 to 1.5k tokens each per request. Screenshots taken by Codex tools are not embedded; the tool output shows `[screenshot]` instead.
+- The first message starts with a note that the chat was moved from Codex, so Claude treats the `[Codex tool: …]` blocks as the Codex agent's actions.
+- `↩Claude` in the list marks chats that Codex itself once imported from Claude.
 
-- User and assistant messages are carried over. Codex tool calls become text
-  blocks `[Codex tool: …]`: input is truncated to 1000 characters, output to 2000.
-- Codex system inserts (environment_context, AGENTS.md, etc.), developer
-  messages, encrypted reasoning and internal reviewer sessions are dropped.
-- A note that the chat was moved from Codex is added at the beginning.
-- A single message is truncated to 8000 characters. If the whole history is
-  longer than 400,000 characters, the oldest turns are not carried over (a note
-  at the beginning says so).
-- Images you attached in Codex (PNG, JPEG, GIF, WebP up to 5 MB) are carried
-  over as real image blocks, so Claude sees them; each costs roughly 1–1.5k
-  tokens per request. Screenshots taken by Codex tools are not embedded — the
-  tool output shows `[screenshot]` instead.
-- Codex context compaction is ignored: the full original history is carried over.
-- The `↩Claude` mark in the list means Codex itself once imported that chat
-  from Claude.
+## Installer details
+
+The installer:
+- clones the repo into `~/.local/share/codex-resume` and links `~/.local/bin/codex-resume`;
+- copies the `/codex-import` slash command to `~/.claude/commands/`;
+- turns on autosync: an async `SessionStart` hook in `~/.claude/settings.json` runs `codex-resume sync --quiet` at every Claude start. It never delays startup; a sync with nothing new takes about 0.04 s with 150+ chats;
+- runs the first sync, so chats are in `/resume` right away;
+- installs `fzf` through Homebrew if brew is available (without fzf, chats are picked from a numbered list);
+- adds `~/.local/bin` to PATH in `~/.zshrc` if it isn't there yet.
+
+Install without autosync: `curl -fsSL …/install.sh | zsh -s -- --no-autosync`. Switch it later with `codex-resume autosync on|off`; updates never turn it back on.
+
+Update: `codex-resume update`, or run the curl line again.
 
 ## Re-importing
 
@@ -88,8 +103,6 @@ Claude (the file has grown), it is left untouched: a new session is created and
 a warning is printed. `sync` only re-imports a chat when its Codex file has
 changed since the last import, so continuing a chat in Claude never produces
 duplicates by itself. State is kept in `~/.local/state/codex-resume/imports.json`.
-
-The tool only reads Codex data.
 
 ## Uninstall
 
@@ -107,4 +120,4 @@ python3 -m unittest discover -s tests
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

@@ -512,6 +512,16 @@ def _short_cwd(cwd: str) -> str:
     return "~" + cwd[len(home):] if cwd == home or cwd.startswith(home + "/") else cwd
 
 
+def _shell_path(path: str) -> str:
+    """Shell-safe path that keeps a leading ~ unquoted so the shell still expands it."""
+    short = _short_cwd(path)
+    if short == "~":
+        return "~"
+    if short.startswith("~/"):
+        return "~/" + shlex.quote(short[2:])
+    return shlex.quote(path)
+
+
 def _dir_name(cwd: str) -> str:
     if cwd == str(Path.home()):
         return "~"
@@ -603,8 +613,8 @@ def _do_import(s: SessionInfo) -> ImportResult:
         print("ℹ This chat was already continued in Claude — that session is kept, a new one was created", file=sys.stderr)
     print(f"Imported: {s.title} ({res.turns} turns)")
     print(f"Claude session: {res.session_id}")
-    print(f"File: {res.path}")
-    print(f"Continue: cd {shlex.quote(res.cwd)} && claude --resume {res.session_id}")
+    print(f"File: {_short_cwd(str(res.path))}")
+    print(f"Continue: cd {_shell_path(res.cwd)} && claude --resume {res.session_id}")
     return res
 
 

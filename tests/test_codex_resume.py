@@ -639,6 +639,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("claude --resume", out)
         self.assertEqual(len(list((self.root / "claude" / "projects").glob("*/*.jsonl"))), 1)
 
+    def test_import_output_uses_home_relative_paths(self):
+        from unittest import mock
+        (self.root / "my proj").mkdir()
+        write_rollout(self.root / "codex", [meta(id="hom-00000004", cwd=str(self.root / "my proj")),
+                                            msg("user", "q"), msg("assistant", "a")])
+        with mock.patch.dict(os.environ, {"HOME": str(self.root)}):
+            code, out, _ = self.run_main("import", "hom-00000004")
+        self.assertEqual(code, 0)
+        self.assertIn("File: ~/claude/projects/", out)
+        self.assertRegex(out, r"Continue: cd ~/'my proj' && claude --resume [0-9a-f-]{36}")
+        self.assertNotIn(str(self.root), out)
+
     def test_preview(self):
         code, out, _ = self.run_main("preview", "cli-00000001")
         self.assertEqual(code, 0)
