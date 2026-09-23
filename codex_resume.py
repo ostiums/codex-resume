@@ -334,6 +334,14 @@ def render_records(turns: list[Turn], session_id: str, cwd: str, version: str, t
     return records
 
 
+SOURCES_KEY = "__sources__"  # state entry: rollout path -> [mtime_ns, size] when last imported/synced
+
+
+def _source_stamp(path: Path) -> list[int]:
+    st = path.stat()
+    return [st.st_mtime_ns, st.st_size]
+
+
 def _count_lines(path: Path) -> int:
     with open(path, "rb") as f:
         return sum(1 for _ in f)
@@ -365,13 +373,11 @@ def import_session(info: SessionInfo, claude_dir: Path, state_path: Path, versio
     out = render_records(turns, sid, cwd, version, info.title)
     atomic_write(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in out))
     state[info.id] = {"session_id": sid, "lines_written": len(out)}
+    state.setdefault(SOURCES_KEY, {})[str(info.path)] = _source_stamp(info.path)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(state_path, json.dumps(state, ensure_ascii=False, indent=1))
     kept = k > 0 and prev.get("session_id") != sid
     return ImportResult(sid, path, cwd, len(turns), kept)
-
-
-SOURCES_KEY = "__sources__"  # state entry: rollout path -> [mtime_ns, size] at the last sync
 
 
 @dataclass
@@ -387,8 +393,7 @@ def sync(codex_home: Path, claude_dir: Path, state_path: Path, get_version) -> S
     sources, imported, unchanged = {}, 0, 0
     titles = origin = version = None
     for path in _session_files(codex_home):
-        st = path.stat()
-        stamp = [st.st_mtime_ns, st.st_size]
+        stamp = _source_stamp(path)
         sources[str(path)] = stamp
         if known.get(str(path)) == stamp:
             unchanged += 1
@@ -406,6 +411,55 @@ def sync(codex_home: Path, claude_dir: Path, state_path: Path, get_version) -> S
     state_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(state_path, json.dumps(state, ensure_ascii=False, indent=1))
     return SyncResult(imported, unchanged)
+
+
+AUTOSYNC_MARK = "codex-resume sync"
+
+
+def _load_settings(path: Path) -> dict:
+    """Claude settings.json; refuses to proceed on a file it can't parse rather than overwrite it."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"Не удалось прочитать {path}: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: ожидался JSON-объект")
+    return data
+
+
+def _is_autosync_entry(entry) -> bool:
+    return isinstance(entry, dict) and any(
+        isinstance(h, dict) and AUTOSYNC_MARK in str(h.get("command", "")) for h in entry.get("hooks") or [])
+
+
+def autosync_enabled(settings_path: Path) -> bool:
+    entries = _load_settings(settings_path).get("hooks", {}).get("SessionStart", [])
+    return any(_is_autosync_entry(e) for e in entries)
+
+
+def set_autosync(settings_path: Path, on: bool, command: str) -> bool:
+    """Add or remove the async SessionStart hook that runs `sync`. Returns True if settings changed."""
+    data = _load_settings(settings_path)
+    hooks = data.get("hooks", {})
+    entries = hooks.get("SessionStart", [])
+    others = [e for e in entries if not _is_autosync_entry(e)]
+    if on == (len(others) != len(entries)):
+        return False
+    if on:
+        others.append({"hooks": [{"type": "command", "command": command, "async": True}]})
+    if others:
+        hooks["SessionStart"] = others
+    else:
+        hooks.pop("SessionStart", None)
+    if hooks:
+        data["hooks"] = hooks
+    else:
+        data.pop("hooks", None)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(settings_path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    return True
 
 
 # ---------------------------------------------------------------- cli
@@ -532,6 +586,12 @@ def _do_import(s: SessionInfo) -> ImportResult:
     return res
 
 
+def _hook_command() -> str:
+    link = Path.home() / ".local/bin/codex-resume"
+    exe = link if link.exists() else Path(os.path.realpath(__file__))
+    return f"{shlex.quote(str(exe))} sync --quiet"
+
+
 def update(repo: Path) -> int:
     """git pull the tool's own checkout and re-run its installer."""
     if not (repo / ".git").exists():
@@ -562,6 +622,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("global", help="выбрать чат из всех папок и открыть в claude").add_argument("id", nargs="?")
     sub.add_parser("preview", help="показать начало чата").add_argument("id")
     sub.add_parser("update", help="обновить codex-resume (git pull + install.sh)")
+    sub.add_parser("autosync", help="синхронизировать чаты Codex в фоне при каждом запуске Claude").add_argument(
+        "state", nargs="?", choices=["on", "off", "status"], default="status")
     sub.add_parser("sync", help="импортировать все новые и изменённые чаты (для /resume)").add_argument(
         "--quiet", action="store_true")
     args = parser.parse_args(argv)
@@ -584,6 +646,16 @@ def main(argv: list[str] | None = None) -> int:
             res = sync(_codex_home(), _claude_dir(), _state_path(), _claude_version)
             if not args.quiet:
                 print(f"Импортировано: {res.imported}, без изменений: {res.unchanged}")
+            return 0
+        if args.cmd == "autosync":
+            settings = _claude_dir() / "settings.json"
+            if args.state != "status":
+                set_autosync(settings, args.state == "on", _hook_command())
+                if args.state == "on":
+                    res = sync(_codex_home(), _claude_dir(), _state_path(), _claude_version)
+                    print(f"Первая синхронизация: импортировано {res.imported}")
+            enabled = autosync_enabled(settings)
+            print(f"Автосинхронизация {'включена' if enabled else 'выключена'} ({settings})")
             return 0
         if args.cmd == "update":
             return update(Path(os.path.realpath(__file__)).parent)

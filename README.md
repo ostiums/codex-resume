@@ -22,6 +22,18 @@ The installer:
 
 Update: `codex-resume update`.
 
+Recommended: turn on automatic sync so every Codex chat shows up in Claude's own
+`/resume` picker:
+
+```sh
+codex-resume autosync on
+```
+
+This adds an async `SessionStart` hook to `~/.claude/settings.json` that runs
+`codex-resume sync --quiet` in the background at every Claude start (it never
+delays startup; a no-op sync takes ~0.04 s even with 150+ chats because
+unchanged Codex files aren't opened). `codex-resume autosync off` removes it.
+
 ## Usage
 
 ```sh
@@ -31,6 +43,8 @@ codex-resume resume <id>         # open a specific chat (looked up across all fo
 codex-resume list [-g] [--json]  # list chats: folder, title; current folder only by default
 codex-resume import <id>         # convert only, print the command to continue
 codex-resume preview <id>        # show the beginning of a chat
+codex-resume sync                # import all new/changed chats so they appear in /resume
+codex-resume autosync on|off     # run sync in the background at every Claude start
 ```
 
 `<id>` is a full Codex session id or any unique part of it (6+ characters).
@@ -45,10 +59,10 @@ preview is hidden; **Space** shows and hides it. Because of that you can't type
 a space in the fzf search field, so search by a single word. The full path is
 shown in the preview.
 
-Inside Claude Code: `/codex-import [global | search text | id]`. It opens an
-interactive picker (3 chats per page plus `Ещё…` for the next page; the free-text
-answer works as search), imports the chosen chat and tells you how to open it.
-A running session can't switch to another one by itself.
+Inside Claude Code: `/codex-import` syncs all chats. Then pick one in the
+built-in `/resume` picker: type `Codex` to filter (imported chats are titled
+`Codex: <title>`), `Ctrl+A` shows chats from all folders, `Space` previews,
+`Enter` opens.
 
 Imported chats appear in the regular `claude --resume` list as `Codex: <title>`.
 
@@ -71,13 +85,16 @@ Imported chats appear in the regular `claude --resume` list as `Codex: <title>`.
 The Claude session id is derived from the Codex session id, so re-importing
 updates the same file. If the imported session has already been continued in
 Claude (the file has grown), it is left untouched: a new session is created and
-a warning is printed. State is kept in `~/.local/state/codex-resume/imports.json`.
+a warning is printed. `sync` only re-imports a chat when its Codex file has
+changed since the last import, so continuing a chat in Claude never produces
+duplicates by itself. State is kept in `~/.local/state/codex-resume/imports.json`.
 
 The tool only reads Codex data.
 
 ## Uninstall
 
 ```sh
+codex-resume autosync off
 rm ~/.local/bin/codex-resume ~/.claude/commands/codex-import.md
 rm -rf ~/.local/state/codex-resume ~/.local/share/codex-resume
 ```

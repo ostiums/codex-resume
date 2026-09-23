@@ -198,15 +198,28 @@ Errors: unknown/ambiguous id → message listing candidates, exit 2; malformed
 JSON lines (e.g. a half-written last line) are skipped silently. An explicit
 id is resolved among visible chats first, then among hidden service sessions.
 
+### Sync and autosync
+
+`codex-resume sync` imports every visible chat whose rollout is new or changed.
+The state file keeps `__sources__`: rollout path → `[mtime_ns, size]` recorded at
+the last import/sync; matching files are skipped without being opened (measured:
+0.04 s for 204 rollouts / 98 MB; first full sync 0.8 s). A chat is re-imported
+only when its Codex file changed, so a Claude-side continuation never causes a
+duplicate by itself.
+
+`codex-resume autosync on|off|status` adds/removes one `SessionStart` hook
+`{"type": "command", "command": "<abs path>/codex-resume sync --quiet", "async": true}`
+in `${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`, leaving every other setting
+untouched and refusing to write if the file can't be parsed. `on` also runs the
+first sync immediately.
+
 ### Slash command
 
-`commands/codex-import.md` (installed as `/codex-import [global | search | id]`):
-both lists (`codex-resume list` and `codex-resume list --global`) are injected
-into the prompt with `` !`…` `` before the model runs, so the model's first
-action is the AskUserQuestion window (3 chats + `Ещё…` for the next page; the
-free-text "Other" answer is search). It then runs `codex-resume import <id>` and
-reports how to open it (`/resume` or the `cd <cwd> && claude --resume <sid>`
-line). It cannot switch the current session.
+`commands/codex-import.md` (installed as `/codex-import`): injects the output of
+`codex-resume sync` and `autosync status` with `` !`…` `` and tells the user to
+pick the chat in the built-in `/resume` picker (type `Codex` to filter, `Ctrl+A`
+for all folders). Custom commands can't render their own full-screen picker, and
+AskUserQuestion is limited to 4 options, so the native picker is used instead.
 
 ## Install
 

@@ -334,6 +334,16 @@ class SyncTests(unittest.TestCase):
         self.assertEqual((res.imported, res.unchanged), (0, 4))
         self.assertEqual(self.version_calls, 1)
 
+    def test_manual_import_then_continue_does_not_duplicate_on_sync(self):
+        info = cr.find_session(self.codex, "syn-00000000")
+        res = cr.import_session(info, self.claude, self.state, "v")
+        with open(res.path, "a") as f:
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "продолжил"}}) + "\n")
+        self.sync()
+        copies = [p for p in (self.claude / "projects").glob("*/*.jsonl")
+                  if "вопрос 0" in p.read_text()]
+        self.assertEqual(copies, [res.path])
+
     def test_changed_chat_is_reimported(self):
         self.sync()
         with open(self.chats[1], "a", encoding="utf-8") as f:
@@ -344,6 +354,58 @@ class SyncTests(unittest.TestCase):
         recs, _ = cr.load_jsonl(self.claude / "projects" / cr.project_slug(info.cwd) /
                                 f"{json.loads(self.state.read_text())[info.id]['session_id']}.jsonl")
         self.assertIn("новое сообщение", recs[-2]["message"]["content"])
+
+
+class AutosyncTests(unittest.TestCase):
+    CMD = "/opt/bin/codex-resume sync --quiet"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.settings = Path(self.tmp.name) / "settings.json"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def hooks(self):
+        return json.loads(self.settings.read_text())["hooks"]["SessionStart"]
+
+    def test_on_creates_async_session_start_hook(self):
+        self.assertTrue(cr.set_autosync(self.settings, True, self.CMD))
+        [entry] = self.hooks()
+        self.assertEqual(entry["hooks"], [{"type": "command", "command": self.CMD, "async": True}])
+        self.assertTrue(cr.autosync_enabled(self.settings))
+
+    def test_on_is_idempotent_and_keeps_other_settings(self):
+        other = {"matcher": "startup", "hooks": [{"type": "command", "command": "echo hi"}]}
+        self.settings.write_text(json.dumps({"model": "opus", "hooks": {"SessionStart": [other]}}))
+        cr.set_autosync(self.settings, True, self.CMD)
+        self.assertFalse(cr.set_autosync(self.settings, True, self.CMD))
+        data = json.loads(self.settings.read_text())
+        self.assertEqual(data["model"], "opus")
+        self.assertEqual(len(data["hooks"]["SessionStart"]), 2)
+        self.assertIn(other, data["hooks"]["SessionStart"])
+
+    def test_off_removes_only_our_hook(self):
+        other = {"hooks": [{"type": "command", "command": "echo hi"}]}
+        self.settings.write_text(json.dumps({"hooks": {"SessionStart": [other]}}))
+        cr.set_autosync(self.settings, True, self.CMD)
+        self.assertTrue(cr.set_autosync(self.settings, False, self.CMD))
+        self.assertEqual(self.hooks(), [other])
+        self.assertFalse(cr.autosync_enabled(self.settings))
+
+    def test_off_cleans_up_empty_hooks(self):
+        cr.set_autosync(self.settings, True, self.CMD)
+        cr.set_autosync(self.settings, False, self.CMD)
+        self.assertEqual(json.loads(self.settings.read_text()), {})
+
+    def test_unparseable_settings_left_untouched(self):
+        self.settings.write_text("{ // comment\n}")
+        with self.assertRaises(ValueError):
+            cr.set_autosync(self.settings, True, self.CMD)
+        self.assertEqual(self.settings.read_text(), "{ // comment\n}")
+
+    def test_status_without_settings_file(self):
+        self.assertFalse(cr.autosync_enabled(self.settings))
 
 
 class CliTests(unittest.TestCase):
