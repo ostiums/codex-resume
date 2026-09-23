@@ -1,83 +1,88 @@
 # codex-resume
 
-Продолжить чат из Codex в Claude Code. Инструмент превращает сессию Codex
-(`~/.codex/sessions/**/rollout-*.jsonl`) в обычную сессию Claude Code и открывает
-её через `claude --resume` в той же папке.
+Continue a Codex chat in Claude Code. The tool converts a Codex session
+(`~/.codex/sessions/**/rollout-*.jsonl`) into a regular Claude Code session and
+opens it with `claude --resume` in the same folder.
 
-## Установка
+The CLI's own messages are in Russian.
 
-Нужны macOS (или Linux) с zsh, `python3` ≥ 3.9, Codex и Claude Code.
+## Installation
+
+Requirements: macOS (or Linux) with zsh, `python3` ≥ 3.9, Codex and Claude Code.
 
 ```sh
 git clone https://github.com/ostiums/codex-resume ~/.local/share/codex-resume && ~/.local/share/codex-resume/install.sh
 ```
 
-Установщик:
-- создаёт `~/.local/bin/codex-resume`;
-- копирует slash-команду `/codex-import` в `~/.claude/commands/`;
-- ставит `fzf` через brew, если brew есть (без fzf выбор чата будет нумерованным списком);
-- добавляет `~/.local/bin` в PATH через `~/.zshrc`, если его там нет.
+The installer:
+- creates `~/.local/bin/codex-resume`;
+- copies the `/codex-import` slash command to `~/.claude/commands/`;
+- installs `fzf` via Homebrew if brew is available (without fzf, chats are picked from a numbered list);
+- adds `~/.local/bin` to PATH via `~/.zshrc` if it isn't there yet.
 
-Обновление: `codex-resume update`.
+Update: `codex-resume update`.
 
-## Использование
+## Usage
 
 ```sh
-codex-resume                  # чаты Codex из ТЕКУЩЕЙ папки: выбрать в fzf и открыть в Claude
-codex-resume global           # то же по всем папкам (-g / --global — синоним)
-codex-resume resume <id>      # открыть конкретный чат (ищется по всем папкам)
-codex-resume list [-g] [--json]  # список: папка, название; по умолчанию только текущая папка
-codex-resume import <id>      # только конвертировать, напечатать команду для продолжения
-codex-resume preview <id>     # начало чата
+codex-resume                     # Codex chats from the CURRENT folder: pick one in fzf and open it in Claude
+codex-resume global              # same, across all folders (-g / --global is a synonym)
+codex-resume resume <id>         # open a specific chat (looked up across all folders)
+codex-resume list [-g] [--json]  # list chats: folder, title; current folder only by default
+codex-resume import <id>         # convert only, print the command to continue
+codex-resume preview <id>        # show the beginning of a chat
 ```
 
-`<id>` — полный id сессии Codex или любая его уникальная часть от 6 символов.
+`<id>` is a full Codex session id or any unique part of it (6+ characters).
 
-Чат всегда открывается в Claude в той папке, где он шёл в Codex, даже если
-`codex-resume global` запущен из другого места. Папка сравнивается после
-раскрытия симлинков.
+The chat always opens in Claude in the folder where it ran in Codex, even if
+`codex-resume global` was started somewhere else. Folders are compared after
+resolving symlinks.
 
-В списке текущей папки видны дата и название чата, в `global` между ними
-добавляется имя папки (`~` для домашней). Превью скрыто, **пробел** показывает и
-скрывает его. Из-за этого в строку поиска fzf нельзя ввести пробел: ищите по
-одному слову. Полный путь виден в превью.
+In the current-folder list you see the date and the chat title; in `global`
+mode the folder name is shown between them (`~` for your home folder). The
+preview is hidden; **Space** shows and hides it. Because of that you can't type
+a space in the fzf search field, so search by a single word. The full path is
+shown in the preview.
 
-Внутри Claude Code: `/codex-import [поиск]`. Команда импортирует чат и печатает
-строку `cd … && claude --resume …`. Открыть другую сессию изнутри текущей нельзя.
+Inside Claude Code: `/codex-import [global | search text | id]`. It opens an
+interactive picker (3 chats per page plus `Ещё…` for the next page; the free-text
+answer works as search), imports the chosen chat and tells you how to open it.
+A running session can't switch to another one by itself.
 
-Импортированные чаты видны в обычном `claude --resume` с названием `Codex: <тема>`.
+Imported chats appear in the regular `claude --resume` list as `Codex: <title>`.
 
-## Как переносится история
+## How the history is carried over
 
-- Переносятся реплики пользователя и ассистента. Вызовы инструментов Codex
-  становятся текстовыми блоками `[Codex tool: …]`: ввод обрезается до 1000
-  символов, вывод до 2000.
-- Отбрасываются системные вставки Codex (environment_context, AGENTS.md и т.п.),
-  сообщения developer, зашифрованный reasoning и служебные сессии-ревьюеры.
-- В начало добавляется пометка о том, что чат перенесён из Codex.
-- Одно сообщение обрезается до 8000 символов. Если вся история длиннее 400 тыс. символов,
-  самые ранние ходы не переносятся (об этом есть пометка в начале).
-- Сжатие контекста в Codex (compaction) игнорируется: переносится полная исходная история.
-- Пометка `↩Claude` в списке означает, что Codex сам когда-то импортировал этот
-  чат из Claude.
+- User and assistant messages are carried over. Codex tool calls become text
+  blocks `[Codex tool: …]`: input is truncated to 1000 characters, output to 2000.
+- Codex system inserts (environment_context, AGENTS.md, etc.), developer
+  messages, encrypted reasoning and internal reviewer sessions are dropped.
+- A note that the chat was moved from Codex is added at the beginning.
+- A single message is truncated to 8000 characters. If the whole history is
+  longer than 400,000 characters, the oldest turns are not carried over (a note
+  at the beginning says so).
+- Codex context compaction is ignored: the full original history is carried over.
+- The `↩Claude` mark in the list means Codex itself once imported that chat
+  from Claude.
 
-## Повторный импорт
+## Re-importing
 
-Id сессии Claude вычисляется из id сессии Codex, поэтому повторный импорт обновляет
-тот же файл. Если импортированную сессию уже продолжали в Claude (файл вырос), она
-не трогается: создаётся новая сессия и выводится предупреждение. Состояние
-хранится в `~/.local/state/codex-resume/imports.json`.
+The Claude session id is derived from the Codex session id, so re-importing
+updates the same file. If the imported session has already been continued in
+Claude (the file has grown), it is left untouched: a new session is created and
+a warning is printed. State is kept in `~/.local/state/codex-resume/imports.json`.
 
-Данные Codex инструмент только читает.
+The tool only reads Codex data.
 
-## Удаление
+## Uninstall
 
 ```sh
 rm ~/.local/bin/codex-resume ~/.claude/commands/codex-import.md
 rm -rf ~/.local/state/codex-resume ~/.local/share/codex-resume
 ```
 
-## Тесты
+## Tests
 
 ```sh
 python3 -m unittest discover -s tests
