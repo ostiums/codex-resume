@@ -295,6 +295,57 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(res.path.parent.name, cr.project_slug(str(Path.home())))
 
 
+class SyncTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.codex, self.claude, self.state = root / "codex", root / "claude", root / "state.json"
+        (root / "w").mkdir()
+        self.chats = [write_rollout(self.codex, [meta(id=f"syn-{n:08d}", cwd=str(root / "w")),
+                                                 msg("user", f"вопрос {n}"), msg("assistant", "ответ")])
+                      for n in range(3)]
+        write_rollout(self.codex, [meta(id="grd-00000009", thread_source="guardian_review"), msg("user", "x")])
+        self.version_calls = 0
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def version(self):
+        self.version_calls += 1
+        return "v"
+
+    def sync(self):
+        return cr.sync(self.codex, self.claude, self.state, self.version)
+
+    def test_first_sync_imports_every_chat_only(self):
+        res = self.sync()
+        self.assertEqual((res.imported, res.unchanged), (3, 0))
+        self.assertEqual(len(list((self.claude / "projects").glob("*/*.jsonl"))), 3)
+        self.assertEqual(self.version_calls, 1)
+
+    def test_second_sync_parses_nothing(self):
+        self.sync()
+        original = cr._read_session
+        cr._read_session = lambda *a: self.fail("unchanged rollout was parsed")
+        try:
+            res = self.sync()
+        finally:
+            cr._read_session = original
+        self.assertEqual((res.imported, res.unchanged), (0, 4))
+        self.assertEqual(self.version_calls, 1)
+
+    def test_changed_chat_is_reimported(self):
+        self.sync()
+        with open(self.chats[1], "a", encoding="utf-8") as f:
+            f.write(json.dumps(msg("user", "новое сообщение")) + "\n")
+        res = self.sync()
+        self.assertEqual((res.imported, res.unchanged), (1, 3))
+        info = cr.find_session(self.codex, "syn-00000001")
+        recs, _ = cr.load_jsonl(self.claude / "projects" / cr.project_slug(info.cwd) /
+                                f"{json.loads(self.state.read_text())[info.id]['session_id']}.jsonl")
+        self.assertIn("новое сообщение", recs[-2]["message"]["content"])
+
+
 class CliTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -449,6 +500,12 @@ class CliTests(unittest.TestCase):
         os.chdir(self.root / "empty")
         code, out, err = self.run_main("list", "--json")
         self.assertEqual((code, json.loads(out), err), (0, [], ""))
+
+    def test_sync_quiet_prints_nothing(self):
+        code, out, err = self.run_main("sync", "--quiet")
+        self.assertEqual((code, out, err), (0, "", ""))
+        code, out, _ = self.run_main("sync")
+        self.assertIn("без изменений", out)
 
     def test_list_json(self):
         code, out, _ = self.run_main("list", "--json")

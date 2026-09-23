@@ -371,6 +371,43 @@ def import_session(info: SessionInfo, claude_dir: Path, state_path: Path, versio
     return ImportResult(sid, path, cwd, len(turns), kept)
 
 
+SOURCES_KEY = "__sources__"  # state entry: rollout path -> [mtime_ns, size] at the last sync
+
+
+@dataclass
+class SyncResult:
+    imported: int
+    unchanged: int
+
+
+def sync(codex_home: Path, claude_dir: Path, state_path: Path, get_version) -> SyncResult:
+    """Import every new or changed Codex chat. Rollouts whose mtime and size match the
+    last sync are skipped without being opened, so a no-op sync costs one stat per file."""
+    known = read_json(state_path).get(SOURCES_KEY, {})
+    sources, imported, unchanged = {}, 0, 0
+    titles = origin = version = None
+    for path in _session_files(codex_home):
+        st = path.stat()
+        stamp = [st.st_mtime_ns, st.st_size]
+        sources[str(path)] = stamp
+        if known.get(str(path)) == stamp:
+            unchanged += 1
+            continue
+        if titles is None:
+            titles, origin = _load_titles(codex_home), _load_claude_origin(codex_home)
+        info = _read_session(path, titles, origin)
+        if info is None or not info.is_chat:
+            continue
+        version = version or get_version()
+        import_session(info, claude_dir, state_path, version)
+        imported += 1
+    state = read_json(state_path)
+    state[SOURCES_KEY] = sources
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(state_path, json.dumps(state, ensure_ascii=False, indent=1))
+    return SyncResult(imported, unchanged)
+
+
 # ---------------------------------------------------------------- cli
 
 
@@ -525,6 +562,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("global", help="выбрать чат из всех папок и открыть в claude").add_argument("id", nargs="?")
     sub.add_parser("preview", help="показать начало чата").add_argument("id")
     sub.add_parser("update", help="обновить codex-resume (git pull + install.sh)")
+    sub.add_parser("sync", help="импортировать все новые и изменённые чаты (для /resume)").add_argument(
+        "--quiet", action="store_true")
     args = parser.parse_args(argv)
 
     try:
@@ -540,6 +579,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 for line in rows(sessions):
                     print(line)
+            return 0
+        if args.cmd == "sync":
+            res = sync(_codex_home(), _claude_dir(), _state_path(), _claude_version)
+            if not args.quiet:
+                print(f"Импортировано: {res.imported}, без изменений: {res.unchanged}")
             return 0
         if args.cmd == "update":
             return update(Path(os.path.realpath(__file__)).parent)
