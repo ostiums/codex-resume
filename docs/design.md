@@ -140,7 +140,7 @@ Records, in order:
    `claude --version`, fallback `"2.1.0"`), `gitBranch: ""`.
    - user: `message = {role: "user", content: "<text>"}`.
    - assistant: `message = {id: "msg_codex_<n>", type: "message", role:
-     "assistant", model: "codex-import", content: [{type: "text", text}],
+     "assistant", model: "<synthetic>" (any unknown id makes Claude Code warn "Session model … could not be restored" on resume), content: [{type: "text", text}],
      stop_reason: "end_turn", stop_sequence: null, usage: {input_tokens: 0,
      output_tokens: 0}}`.
 2. `{"type": "custom-title", "customTitle": "Codex: <title>", "sessionId"}`.

@@ -344,7 +344,7 @@ def render_records(turns: list[Turn], session_id: str, cwd: str, version: str, t
             message = {"role": "user", "content": content}
         else:
             message = {"id": f"msg_codex_{n}", "type": "message", "role": "assistant",
-                       "model": "codex-import", "content": [{"type": "text", "text": turn.text}],
+                       "model": "<synthetic>", "content": [{"type": "text", "text": turn.text}],
                        "stop_reason": "end_turn", "stop_sequence": None,
                        "usage": {"input_tokens": 0, "output_tokens": 0}}
         records.append({"parentUuid": parent, "isSidechain": False, "type": turn.role,

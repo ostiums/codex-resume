@@ -299,6 +299,12 @@ class WriteTests(unittest.TestCase):
                          "-Users-alice-Documents-work-my-app")
         self.assertEqual(cr.project_slug("/Users/alice/Cowork проект"), "-Users-alice-Cowork-------")
 
+    def test_assistant_model_is_synthetic(self):
+        # Claude Code warns "Session model … could not be restored" on resume for any model id
+        # it doesn't know; "<synthetic>" is its own marker for non-model messages and is silent.
+        recs = cr.render_records([cr.Turn("user", ["q"], TS), cr.Turn("assistant", ["a"], TS)], "sid", "/w", "v", "T")
+        self.assertEqual(recs[1]["message"]["model"], "<synthetic>")
+
     def test_render_records_chain_and_title(self):
         turns = [cr.Turn("user", ["q"], TS), cr.Turn("assistant", ["a"], None)]
         recs = cr.render_records(turns, "sid", "/w", "2.1.280", "Topic")
