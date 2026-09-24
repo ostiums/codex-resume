@@ -314,7 +314,7 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(recs[1]["message"]["content"], [{"type": "text", "text": "a"}])
         self.assertEqual(recs[1]["message"]["role"], "assistant")
         self.assertTrue(recs[1]["timestamp"].endswith("Z"))
-        self.assertEqual(recs[-1], {"type": "custom-title", "customTitle": "Codex: Topic", "sessionId": "sid"})
+        self.assertEqual(recs[-1], {"type": "custom-title", "customTitle": "⬡ Codex: Topic", "sessionId": "sid"})
         for r in recs[:2]:
             self.assertEqual((r["sessionId"], r["cwd"], r["version"], r["isSidechain"]), ("sid", "/w", "2.1.280", False))
 

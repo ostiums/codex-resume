@@ -29,6 +29,7 @@ IMAGE_DATA_URL = re.compile(r"data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z
 DIR_COLUMN_MAX = 24
 PREVIEW_TURNS = 15
 PREVIEW_CHARS = 600
+TITLE_PREFIX = "⬡ Codex: "  # hexagon marks imported chats in /resume; plain text, so search and rename keep working
 LEAD_USER_TEXT = "[Continuing a chat from Codex]"
 NOISE_PREFIXES = (
     "<environment_context>", "<app-context>", "<recommended_plugins>",
@@ -352,7 +353,7 @@ def render_records(turns: list[Turn], session_id: str, cwd: str, version: str, t
                         "userType": "external", "entrypoint": "cli", "cwd": cwd,
                         "sessionId": session_id, "version": version, "gitBranch": ""})
         parent = rec_uuid
-    records.append({"type": "custom-title", "customTitle": f"Codex: {title}", "sessionId": session_id})
+    records.append({"type": "custom-title", "customTitle": f"{TITLE_PREFIX}{title}", "sessionId": session_id})
     return records
 
 

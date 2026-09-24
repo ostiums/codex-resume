@@ -15,7 +15,7 @@ Continue your OpenAI Codex chats in Claude Code. Every Codex chat (Desktop app o
 curl -fsSL https://raw.githubusercontent.com/ostiums/codex-resume/main/install.sh | zsh
 ```
 
-After that, every Codex chat is listed in Claude Code's own `/resume` picker as `Codex: <title>`, and `codex-resume` in any project folder shows the Codex chats that ran there.
+After that, every Codex chat is listed in Claude Code's own `/resume` picker as `⬡ Codex: <title>`, and `codex-resume` in any project folder shows the Codex chats that ran there.
 
 Requirements: macOS or Linux with zsh, `git`, `python3` 3.9 or newer, Codex and Claude Code. No other dependencies; `fzf` is installed through Homebrew when brew is present.
 
@@ -24,7 +24,7 @@ Requirements: macOS or Linux with zsh, `git`, `python3` 3.9 or newer, Codex and 
 - Your messages and the Codex replies, in order, including everything before a Codex context compaction.
 - Tool calls as short text blocks (`[Codex tool: exec]`, the command, then the output cut to 2,000 characters), so Claude knows what was run without a multi-megabyte context.
 - Screenshots you attached in Codex, as real images Claude can see.
-- The chat title, shown in `/resume` as `Codex: <title>`.
+- The chat title, shown in `/resume` as `⬡ Codex: <title>`.
 
 Left out: Codex system prompts, `<environment_context>` and AGENTS.md inserts, developer messages, encrypted reasoning, and the internal approval-reviewer sessions Codex Desktop creates. Codex data is only read, never modified.
 
@@ -34,7 +34,7 @@ Measured on 2026-09-23 with one real Codex Desktop 0.155 chat: 113 tool calls, o
 
 | Tool | What Claude gets | History carried | Codex system text in the history | Title in `/resume` |
 |---|---|---|---|---|
-| **codex-resume** | native session | all 43 replies, tool calls as compact text: 189k characters | filtered out | `Codex: <title>` |
+| **codex-resume** | native session | all 43 replies, tool calls as compact text: 189k characters | filtered out | `⬡ Codex: <title>` |
 | [transession](https://github.com/inmzhang/transession) 0.2.0 | native session | all replies with full tool output and images: 2.6M characters, about 180k tokens on the first prompt | kept, replayed as user messages | first message, which is Codex system text |
 | [codex2claude](https://github.com/MisterBrookT/codex2claude) | native session (runs transession, then cleans up) | full history, 5.8 MB session file | partly filtered | first message |
 | [cli-continues](https://github.com/yigitkonur/cli-continues) 4.1.1 | a summary prompt in a new session | last 10 messages (50 with `--preset full`); replies from before the compaction are lost in the default preset | partly filtered | none |
@@ -70,7 +70,7 @@ shown in the preview.
 
 Inside Claude Code: `/codex-import` syncs all chats. Then pick one in the
 built-in `/resume` picker: type `Codex` to filter (imported chats are titled
-`Codex: <title>`), `Ctrl+A` shows chats from all folders, `Space` previews,
+`⬡ Codex: <title>`), `Ctrl+A` shows chats from all folders, `Space` previews,
 `Enter` opens.
 
 ## Conversion limits

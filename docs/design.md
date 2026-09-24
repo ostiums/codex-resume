@@ -14,7 +14,7 @@ Success criteria:
 - `codex-resume` → fuzzy picker → chosen chat opens in `claude --resume` in its
   original `cwd`, and Claude answers with awareness of the earlier conversation.
 - Imported sessions show up in Claude's own `/resume` list with a recognizable
-  title (`Codex: <title>`).
+  title (`⬡ Codex: <title>`).
 - Codex data is never modified.
 - Re-importing a chat that got new messages in Codex refreshes the Claude
   session, but never destroys a continuation the user already made in Claude.
@@ -143,7 +143,7 @@ Records, in order:
      "assistant", model: "<synthetic>" (any unknown id makes Claude Code warn "Session model … could not be restored" on resume), content: [{type: "text", text}],
      stop_reason: "end_turn", stop_sequence: null, usage: {input_tokens: 0,
      output_tokens: 0}}`.
-2. `{"type": "custom-title", "customTitle": "Codex: <title>", "sessionId"}`.
+2. `{"type": "custom-title", "customTitle": "⬡ Codex: <title>", "sessionId"}`.
 
 This field set was validated in a spike: `claude -p --resume <sid>` on a
 hand-built file with exactly these records resumes correctly and the model
