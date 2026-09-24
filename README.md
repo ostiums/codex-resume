@@ -7,7 +7,7 @@ Continue your OpenAI Codex chats in Claude Code. Every Codex chat (Desktop app o
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
-![codex-resume demo: pick a Codex chat in fzf, preview it, import it into Claude Code](assets/demo.gif)
+![codex-resume demo: Codex chats listed in Claude Code's /resume picker next to regular sessions, a preview of an imported chat, then the codex-resume fzf picker in the terminal](assets/demo.gif)
 
 ## Install
 
